@@ -77,11 +77,20 @@ import java.util.List;
  * {@code {"item":…}} in Immersive Engineering's own recipes, so this is accepted rather
  * than worked around.
  *
- * <p>Deliberately not declared: {@code blast_furnace_fuel} and {@code fertilizer} (no
- * output), plus the fluid/grid pages {@code fermenter}, {@code squeezer},
- * {@code bottling_machine} and {@code cloche} - see the note next to each
- * declaration's slot shape in the static block. {@code refinery}, {@code mixer} and
- * {@code coke_oven} are declared; their JSON and slot order are quoted there.
+ * <p>Every Immersive Engineering page whose recipes have a JSON file to patch is
+ * declared, including the ones that needed a shape this file could not state:
+ * {@code cloche}, {@code bottling_machine}, {@code fertilizer} and
+ * {@code blast_furnace_fuel} are declared through a recipe-derived slot sequence
+ * ({@link ImmersiveEngineeringSlotSequences} quotes the JSON, the category's slot
+ * order and why a field list cannot name them - a variable-length item list whose
+ * key changes per file, an output array whose entries are chance-wrapped, or no
+ * output slot at all). The pages that stay read-only are named with
+ * {@code withReadOnlyPages} on the declaration of their serializer, because their
+ * recipes exist only in memory: {@code arc_recycling}, {@code mixer_potions},
+ * {@code bottling_buckets} and {@code bottling_potions}.
+ * {@code refinery}, {@code mixer} and {@code coke_oven} are declared field lists;
+ * their JSON and slot order are quoted next to their declarations, as the fluid
+ * pages {@code fermenter} and {@code squeezer} are.
  *
  * <p>{@code sawmill} and {@code arc_furnace} declare their output as an <em>ordered
  * segment list</em> ({@code withConcatenatedOutputs}) because the recipe decides which
@@ -411,6 +420,125 @@ public final class ImmersiveEngineeringRecipeDeclarations {
                 .withFieldKind("creosote", IngredientKind.FLUID)
                 .withFluidStyles(ModdedJsonStyle.FLUID, ModdedJsonStyle.AMOUNT)
                 .withFixedFieldIds("creosote", "immersiveengineering:creosote"));
+
+        // JEI page immersiveengineering:squeezer ("工业挤压机"), 1 input / 1..2 outputs.
+        // data/immersiveengineering/recipe/squeezer/melon_seeds.json - the fluid shape:
+        //   {"type":"immersiveengineering:squeezer","energy":6400,
+        //    "fluid":{"amount":20,"id":"immersiveengineering:plantoil"},
+        //    "input":{"item":"minecraft:melon_seeds"}}
+        // data/immersiveengineering/recipe/squeezer/graphite_dust.json - the item shape:
+        //   {"type":"immersiveengineering:squeezer","energy":19200,
+        //    "input":{"basePredicate":{"tag":"c:dusts/coal_coke"},"count":8},
+        //    "result":{"tag":"c:dusts/hop_graphite"}}
+        // Of the 6 shipped files 5 write "fluid" and 1 writes "result"; none writes both.
+        // SqueezerRecipeCategory.setRecipe:
+        //   addSlot(INPUT).addItemStacks(input.getMatchingStacks())
+        //   slot = addSlot(OUTPUT)                        // created unconditionally
+        //   if (!itemOutput.get().isEmpty()) slot.addItemStack(itemOutput.get())
+        //   if (fluidOutput is not null and not empty)
+        //       addSlot(OUTPUT).setFluidRenderer(…).addIngredient(FLUID_STACK, fluidOutput)
+        // - the item OUTPUT slot exists on every recipe, so the 5 fluid recipes draw *two*
+        // output slots: ordinal 0 is the empty item slot and ordinal 1 the fluid, while the
+        // graphite recipe draws one, the item. JEI keeps a slot the category created even
+        // when it holds no ingredient (the client test's "[B] leaves the … slot output.0
+        // empty" check is what proved it: an ordered segment list would name the fluid for
+        // ordinal 0 and leave that empty slot unnameable). The ordinal-to-field mapping is
+        // fixed - 0 is "result", 1 is "fluid" - which is exactly what this positional list
+        // says, and a drag onto the empty item slot of a fluid recipe writes a "result"
+        // the recipe codec accepts next to its "fluid".
+        // The kinds are declared so each slot accepts only its own: the fluid is the
+        // FluidStack codec {"amount":…,"id":…}, the item output a TagOutput written as
+        // {"id":…,"count":…}. "input" is an IngredientWithSize whose plain {"item":…}
+        // branch is what the input style writes; "energy" is not declared and survives.
+        adapters.add(new ModdedRecipeDeclaration("immersiveengineering:squeezer",
+                Collections.singletonList("input"), Arrays.asList("result", "fluid"),
+                ModdedRecipeAdapter.ItemJsonStyle.ITEM,
+                ModdedRecipeAdapter.ItemJsonStyle.ID)
+                .withFluidFields("fluid"));
+
+        // JEI page immersiveengineering:fermenter ("工业发酵机"), 1 input / 1..2 outputs.
+        // data/immersiveengineering/recipe/fermenter/potato.json - the fluid shape:
+        //   {"type":"immersiveengineering:fermenter","energy":6400,
+        //    "fluid":{"amount":80,"id":"immersiveengineering:ethanol"},
+        //    "input":{"tag":"c:crops/potato"}}
+        // data/immersiveengineering/recipe/fermenter/honey.json - the only file that also
+        // carries an item output:
+        //   {"fluid":{"amount":250,"id":"immersiveengineering:ethanol"},
+        //    "input":{"item":"minecraft:honey_bottle"},
+        //    "result":{"id":"minecraft:glass_bottle"}}
+        // Of the 8 shipped files all 8 write "fluid" and 1 writes "result" as well.
+        // FermenterRecipeCategory.setRecipe adds the three slots in the same order as the
+        // squeezer's, so the item slot exists on all 8 recipes and is empty on the 7 that
+        // have no "result": the page draws two OUTPUT slots there (ordinal 0 empty, ordinal
+        // 1 the fluid) and two on honey.json (ordinal 0 the bottle, ordinal 1 the ethanol).
+        // The declared list is the same fixed ordinal mapping the squeezer's is.
+        adapters.add(new ModdedRecipeDeclaration("immersiveengineering:fermenter",
+                Collections.singletonList("input"), Arrays.asList("result", "fluid"),
+                ModdedRecipeAdapter.ItemJsonStyle.ITEM,
+                ModdedRecipeAdapter.ItemJsonStyle.ID)
+                .withFluidFields("fluid"));
+
+        // JEI page immersiveengineering:cloche ("园艺玻璃罩"), 2 inputs / 1..2 outputs.
+        // Its slots are a recipe-derived sequence, not a field list -
+        // ImmersiveEngineeringSlotSequences.Cloche quotes the JSON, the category's slot
+        // order and the reason (the "results" array mixes plain outputs with
+        // {"chance":…,"output":…} entries in one ordinal sequence, and only the sequence
+        // can address the nested object of the latter). The two styles are the mod's own
+        // item shapes: the seed and the outputs are plain Ingredient ({"item":…}) and
+        // TagOutput ({"id":…,"count":…}) values. The fluid input is an unsized
+        // FluidIngredient, so the FLUID style's "amount" key is written but ignored by
+        // its codec - see the sequence's note.
+        adapters.add(new ModdedRecipeDeclaration("immersiveengineering:cloche",
+                ImmersiveEngineeringSlotSequences.Cloche.INSTANCE,
+                ModdedRecipeAdapter.ItemJsonStyle.ITEM,
+                ModdedRecipeAdapter.ItemJsonStyle.ID,
+                ModdedJsonStyle.FLUID, ModdedJsonStyle.FLUID_ID));
+
+        // JEI page immersiveengineering:bottling_machine ("灌装机"), 2..4 inputs / 1..2 outputs.
+        // Also a derived sequence: the item input is a single "input" object in 23 of the
+        // 28 shipped files and an "inputs" array in the other 5, which no field list can
+        // name (see ImmersiveEngineeringSlotSequences.BottlingMachine).
+        // The other two pages of the same serializer stay read-only and are named here so
+        // the client refuses to model them: their recipes are synthesised at display time
+        // and have no recipe JSON to patch -
+        //   immersiveengineering:bottling_buckets has 37 recipes, all with a
+        //     "immersiveengineering:jei_bucket_<fluid>" id (JEIHelper builds them from the
+        //     fluid registry; there is no bucket list file in the jar), and
+        //   immersiveengineering:bottling_potions has 175 with a
+        //     "immersiveengineering:potion_bottling_list<nnn>" id, generated by
+        //     GeneratedListRecipe from data/immersiveengineering/recipe/potion_bottling_list.json
+        //     (an "immersiveengineering:generated_list" file, like mixer_potions' and
+        //     arc_recycling's).
+        // The fluid input of the declared page is a SizedFluidIngredient
+        // ({"amount":…,"tag":…}), so the default amount-bearing fluid styles are the right
+        // ones here, unlike the cloche's unsized field.
+        adapters.add(new ModdedRecipeDeclaration("immersiveengineering:bottling_machine",
+                ImmersiveEngineeringSlotSequences.BottlingMachine.INSTANCE,
+                ModdedRecipeAdapter.ItemJsonStyle.ITEM,
+                ModdedRecipeAdapter.ItemJsonStyle.ID,
+                ModdedJsonStyle.FLUID, ModdedJsonStyle.FLUID_ID)
+                .withReadOnlyPages("immersiveengineering:bottling_buckets",
+                        "immersiveengineering:bottling_potions"));
+
+        // JEI pages immersiveengineering:fertilizer ("园艺玻璃罩肥料", 5 recipes) and
+        // immersiveengineering:blast_furnace_fuel ("高炉燃料", 4 recipes): one INPUT slot
+        // and no output slot at all. Both are declared with the same single-item sequence,
+        // which is the only declaration form whose output side can be empty - a field list
+        // needs at least one output field. The two files are quoted next to
+        // SingleItemInputSequence.INPUT (shared with Silent Gear's and Mekanism's pages of
+        // the same shape); the fertilizer's
+        // "growthModifier" and the fuel's "time" are undeclared and survive verbatim.
+        adapters.add(new ModdedRecipeDeclaration("immersiveengineering:fertilizer",
+                SingleItemInputSequence.INPUT,
+                ModdedRecipeAdapter.ItemJsonStyle.ITEM,
+                ModdedRecipeAdapter.ItemJsonStyle.ID,
+                ModdedJsonStyle.FLUID, ModdedJsonStyle.FLUID_ID));
+
+        adapters.add(new ModdedRecipeDeclaration("immersiveengineering:blast_furnace_fuel",
+                SingleItemInputSequence.INPUT,
+                ModdedRecipeAdapter.ItemJsonStyle.ITEM,
+                ModdedRecipeAdapter.ItemJsonStyle.ID,
+                ModdedJsonStyle.FLUID, ModdedJsonStyle.FLUID_ID));
 
         ALL = Collections.unmodifiableList(adapters);
     }

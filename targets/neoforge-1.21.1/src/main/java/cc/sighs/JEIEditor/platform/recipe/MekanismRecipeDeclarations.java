@@ -422,6 +422,25 @@ public final class MekanismRecipeDeclarations {
                 .withChemicalFields("chemical_input")
                 .withPreservedIngredientBase("item_input"));
 
+        // JEI page mekanism:energy_conversion ("Energy Conversion", 2 recipes), 1 input /
+        // no output slot.
+        // data/mekanism/recipe/energy_conversion/redstone.json:
+        //   {"type":"mekanism:energy_conversion","input":{"count":1,"tag":"c:dusts/redstone"},
+        //    "output":10000}
+        // data/mekanism/recipe/energy_conversion/redstone_block.json is the same shape with
+        // "output":90000.
+        // The page draws exactly one slot - the input ingredient - and shows the energy as
+        // text beside it, so there is no output slot to name: the "output" value is a bare
+        // energy amount in FE, not an ingredient (and not a fluid or chemical either), so no
+        // declared kind can carry it. The page is therefore declared through
+        // SingleItemInputSequence (one item input, no output); "output" stays undeclared and
+        // survives verbatim, the same way the fertilizer's "growthModifier" does.
+        adapters.add(new ModdedRecipeDeclaration("mekanism:energy_conversion",
+                SingleItemInputSequence.INPUT,
+                ModdedRecipeAdapter.ItemJsonStyle.ITEM,
+                ModdedRecipeAdapter.ItemJsonStyle.ID,
+                ModdedJsonStyle.FLUID, ModdedJsonStyle.FLUID_ID));
+
         // Deliberately not declared:
         // - mekanism:smelting -> the page has no recipe JSON at all; its 284 recipes are
         //   synthesised at runtime from minecraft:smelting recipes, so the declared write

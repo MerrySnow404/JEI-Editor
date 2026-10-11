@@ -62,10 +62,132 @@ VANILLA_SUPPORTED = {
     "jei:information",
 }
 
-# Pages a declaration *seems* to cover (they share a declared serializer) but
-# which cannot actually be modelled: proven by scripts/jei-client-tests.ps1,
-# which reports 0 models for them.
-NOT_COVERED_UIDS = {"immersiveengineering:arc_recycling"}
+
+def implemented_vanilla_serializers():
+    """The vanilla serializers the write path implements itself.
+
+    Read from ``RecipeEditorAdapters.isImplementedVanillaSerializer``'s three
+    adapters so the list cannot drift. A recipe whose serializer is one of these
+    is patched in the vanilla JSON shape by its own adapter - no declaration is
+    involved - which is what a page that *displays* such a recipe needs.
+    """
+    pattern = os.path.join(ROOT, "targets", "neoforge-1.21.1", "src", "main", "java",
+                           "cc", "sighs", "JEIEditor", "platform", "recipe",
+                           "*RecipeEditorAdapter.java")
+    found = set()
+    for path in glob.glob(pattern):
+        with open(path, encoding="utf-8") as handle:
+            source = handle.read()
+        body = re.search(r"public static boolean supportsSerializer\(String serializerId\) \{(.*?)\n    \}",
+                         source, re.S)
+        if body:
+            found.update(re.findall(r'"(minecraft:[a-z_]+)"', body.group(1)))
+    return found
+
+
+IMPLEMENTED_VANILLA = implemented_vanilla_serializers()
+
+# Pages a declaration cannot cover: their recipes never enter the recipe manager (or
+# share a declared serializer whose recipes are generated at reload time), so nothing
+# on them is patchable and the client builds no model. Proven by
+# scripts/jei-client-tests.ps1, whose gate reports 0 models for them.
+NOT_COVERED_UIDS = {
+    # Shares immersiveengineering:bottling_machine, but its recipes are synthesised for
+    # display (ids like immersiveengineering:arc_*_list000) with no recipe JSON.
+    "immersiveengineering:arc_recycling",
+    # Silent Gear's fabric and super alloys are generated from its material data and
+    # never enter the manager at all - not even the client can resolve a holder for
+    # them - so neither page has a recipe to patch.
+    "silentgear:alloy_making/fabric",
+    "silentgear:alloy_making/super",
+    # The page's displayed object is MaterialGraderRecipeCategory$GraderRecipe, a helper
+    # record built inside the category to list the gradable items (one "recipe" with 173
+    # candidates). It is not a recipe the manager holds, so it has no id and no holder:
+    # the client can model nothing.
+    "silentgear:grading",
+    # Create's mysterious-item-conversion page displays
+    # com.simibubi.create.compat.jei.ConversionRecipe objects - a JEI-compat display class
+    # (it lives in the compat package, not in Create's recipe registry) whose ids are
+    # synthesised (create:conversion_0, _1) and have no recipe JSON. Nothing on the page
+    # resolves to a manager recipe, so the client builds no model.
+    "create:mystery_conversion",
+    # JEI's own tag pages. They are not recipes at all - each page lists the members of
+    # every item/block/fluid tag - and scripts/jei-client-tests.ps1 already keeps them in a
+    # separate known-unsupported list whose gate requires zero models. Marking them `gap`
+    # here as well makes the checklist's `todo` column mean "work that is still to do",
+    # which these three never will be.
+    "minecraft:tag_recipes/item",
+    "minecraft:tag_recipes/block",
+    "minecraft:tag_recipes/fluid",
+    # --- recipes that exist only in code, so there is no recipe JSON to patch ---
+    # Just Enough Archaeology builds its archaeology and sniffing recipes in code from
+    # loot tables: the jar ships no data JSON at all (assets and classes only), so the
+    # displayed ids (jearchaeology:archaeology/ocean_ruin_warm, jearchaeology:sniffing)
+    # have no file behind them.
+    "jearchaeology:brush",
+    "jearchaeology:sniff",
+    # --- pages whose displayed object is a JEI-integration class, not a manager recipe ---
+    # Each of these carries its own recipe class in a "compat"/"integration"/client-viewer
+    # package, is absent from the dump's recipe-id column and builds no model. Cobblemon's
+    # berry mutation, Resource Geodes' catalyst recipes, Better Piglin Trades' barter
+    # entries, the three Just Enough Beacons pages, Mekanism's two multiblock preview
+    # pages and the Smithing Template Viewer's trim wrapper are all of that kind.
+    "cobblemon:berry_recipe",
+    "createresourcegeodes:catalyst_generation",
+    "betterpiglintrades:piglin_barter",
+    "just_enough_beacons:beacon_base_block",
+    "just_enough_beacons:beacon_payment",
+    "just_enough_beacons:conduit_frame_block",
+    "mekanism:boiler_casing",
+    "mekanism:sps_casing",
+    "smithingtemplateviewer:smithing_trim",
+    # --- worldgen/info pages that wear a RecipeHolder of their own ---
+    # The dimensions and NNP Easy Farming's farming stems come from Advanced Worldgen
+    # Info, whose com.yanny.awi...RecipeHolder is that mod's own holder class - it makes
+    # the dump's class column look like a recipe, but the pages list biomes and crop
+    # placements, not recipes.
+    "minecraft:overworld",
+    "minecraft:the_nether",
+    "minecraft:the_end",
+    "nnp_easy_farming:farming_stem",
+    # --- real mod recipes whose slots no declaration can name ---
+    # Reasons next to their declarations in MiscRecipeDeclarations/MekanismRecipeDeclarations:
+    # Horse Powered's bottling output carries a component patch (a written result would drop
+    # its potion contents) and its trapping output is a spawn egg derived from an "entity"
+    # string (no item field to write); Mekanism's nutritional liquifier is its client-only
+    # recipe-viewer recipe, which has no serializer the write path could address.
+    "horsepowered:bottling",
+    "horsepowered:trapping",
+    "mekanism:nutritional_liquifier",
+    # Create's item-drain page cannot be declared with the mechanism the project has: 78 of
+    # its 80 entries are ItemDrainCategory#consumeRecipes entries, and those draw an input
+    # slot holding a component-carrying stack (a Mekanism creative fluid tank) plus an empty
+    # item output. A derived declaration has to claim the page's slots by kind, and the
+    # client test's derived-shape rule rejects an input slot that shows nothing addressable
+    # (measured: 57 in-client failures, e.g. "draws 1 input slots but its item band (0) and
+    # fluid band (0) hold 0" and "leaves the item/fluid slot output.1 empty" on
+    # create:empty_mekanism_creative_fluid_tank_of_mekanism_brine). The page's own two
+    # reachable entries would be editable, but no declaration can be asserted for the page
+    # as a whole, so it stays unmodelled and is recorded here instead.
+    "create:draining",
+}
+
+# Pages whose displayed holder wraps a vanilla recipe: Create shows its
+# "automatic packing / shapeless" pages as BasinRecipeHolders (the dump's serializer
+# column says create:basin), while the id that holder carries resolves to the recipe the
+# manager really holds - a minecraft:crafting_shaped / crafting_shapeless one that the
+# write path implements itself. That is the same shape mekanism:smelting's alias has
+# (see ALIASED_UIDS), just without an id rewrite, so no static rule can see it: the ids
+# are ordinary ones and the wrapper is Create's.
+# Both pages are asserted by scripts/jei-client-tests.ps1 (each must build at least one
+# model: 40/40 and 24/40 sampled - the rest of automatic_shapeless carries serializers
+# the editor does not implement, e.g. refinedstorage:recoloring) and the write behind
+# them by scripts/jei-declared-smoke.ps1's create:automatic_packing probe, which patches
+# minecraft:bone_block and asserts the written minecraft:crafting_shaped JSON.
+RESOLVED_VANILLA_UIDS = {
+    "create:automatic_packing",
+    "create:automatic_shapeless",
+}
 
 
 def read_only_page_uids():
@@ -165,8 +287,9 @@ DECLARED = declared_serializers()
 
 # Pages whose displayed object is not a RecipeHolder, so the dump has no
 # serializer for them. The authoritative uid -> serializer mapping is the
-# comment above each entry in platform/recipe/MiscRecipeDeclarations.java;
-# keep this list in step with it.
+# comment above each entry in platform/recipe/MiscRecipeDeclarations.java
+# (and SilentGearRecipeDeclarations.java for the silentgear ones, whose pages
+# push bare recipe objects into JEI); keep this list in step with it.
 DECLARED_UIDS = {
     "horsepowered:chopping",
     "horsepowered:pressing",
@@ -177,18 +300,50 @@ DECLARED_UIDS = {
     "horsepowered:manual_grinding",
     "rackitup:drying",
     "nnp_easy_farming:grindstone_recipe",
+    "silentgear:alloy_making/metal",
+    "silentgear:alloy_making/gem",
+    "silentgear:gear_crafting",
+    "silentgear:salvaging",
+    "silentgear:tool_action",
+    "cobblemon:campfire_pot_recipe",
 }
 
 
 def status_of(row):
     if row["uid"] in NOT_COVERED_UIDS or row["uid"] in READ_ONLY_UIDS:
         return "gap"
-    if row["uid"] in VANILLA_SUPPORTED:
+    if (row["uid"] in VANILLA_SUPPORTED or row["uid"] in VANILLA_BACKED
+            or row["uid"] in RESOLVED_VANILLA_UIDS):
         return "done"
     if (serializer(row) in DECLARED or row["uid"] in DECLARED_UIDS
             or row["uid"] in ALIASED_UIDS):
         return "declared"
     return "todo"
+
+
+def vanilla_backed_uids(rows):
+    """Page uids that display recipes the vanilla adapters already patch.
+
+    Create's ``create:fan_smoking`` page draws the ``minecraft:smoking`` recipes
+    the recipe manager holds, under their own ids and with their own serializer
+    (the dump's ``type=`` column names it), so the editor models them through
+    ``CookingRecipeEditorAdapter`` and the patch carries ``minecraft:smoking`` -
+    the same path ``minecraft:smoking`` itself uses. No declaration is involved,
+    and none may be added: a serializer-keyed declaration would take the page away
+    from the vanilla adapter. The checklist therefore counts such a page as done
+    on the strength of the serializer its displayed recipe carries, which is the
+    same fact ``scripts/jei-client-tests.ps1`` asserts by requiring the page to
+    build at least one model.
+    """
+    backed = {}
+    for row in rows:
+        current = serializer(row)
+        if current in IMPLEMENTED_VANILLA and row["uid"] not in VANILLA_SUPPORTED:
+            backed[row["uid"]] = current
+    return backed
+
+
+VANILLA_BACKED = {}
 
 
 def render_table(out, rows, with_status, with_uid_status=False):
@@ -227,6 +382,8 @@ def group_by_namespace(out, rows, with_status, with_uid_status=False):
 
 def main():
     rows = load()
+    global VANILLA_BACKED
+    VANILLA_BACKED = vanilla_backed_uids(rows)
     supported = [r for r in rows if r["uid"] in VANILLA_SUPPORTED]
     rest = [r for r in rows if r["uid"] not in VANILLA_SUPPORTED]
     info = [r for r in rest if namespace(r["uid"]) in INFO_NAMESPACES]
@@ -281,6 +438,31 @@ def main():
     out.write("配方对象是 `RecipeHolder`，且槽位原料全是普通物品，是第一批实现目标。\n")
     group_by_namespace(out, plain, True)
 
+    if VANILLA_BACKED:
+        out.write("\nA1 表里状态 `done` 但 serializer 列写着 vanilla 名称的 %d 页，显示的**就是**"
+                  "配方管理器里那条 vanilla 配方（id 未被改写、serializer 也没变），写回走它自己的 "
+                  "vanilla 适配器，因此既不需要声明、也不能加声明（按 serializer 的声明会把页面从 "
+                  "vanilla 适配器手里拿走）。它们的 `done` 由 `scripts/jei-client-tests.ps1` 断言"
+                  "（每页至少一个模型），写回形状由 `scripts/jei-declared-smoke.ps1` 里对应 serializer "
+                  "的用例钉住：\n\n" % len(VANILLA_BACKED))
+        out.write("| 页面 uid | 配方数 | 显示的配方 serializer | 说明 |\n| --- | --- | --- | --- |\n")
+        for uid in sorted(VANILLA_BACKED):
+            row = [r for r in rows if r["uid"] == uid][0]
+            out.write("| `%s` | %s | `%s` | %s |\n"
+                      % (uid, row["recipes"], VANILLA_BACKED[uid], row["title"][:24]))
+
+    if RESOLVED_VANILLA_UIDS:
+        out.write("\n另有两页的 serializer 列写着模组自己的名字，但**那条 id 指向的真正配方**是 vanilla 的："
+                  "Create 把这两页的条目包成自己的 `BasinRecipeHolder` 展示，而 id 落到配方管理器里"
+                  "仍是 `minecraft:crafting_shaped` / `crafting_shapeless`，编辑器按 identity/`byKey` 找到"
+                  "真配方再按 vanilla 分支写回（与 `mekanism:smelting` 的别名同一情形，只是 id 没被改写，"
+                  "静态规则看不出来，所以在这里具名）：\n\n")
+        out.write("| 页面 uid | 配方数 | 说明 | 客户端建模 |\n| --- | --- | --- | --- |\n")
+        for uid in sorted(RESOLVED_VANILLA_UIDS):
+            row = [r for r in rows if r["uid"] == uid][0]
+            out.write("| `%s` | %s | %s | 见 §门禁页面的建模覆盖 |\n"
+                      % (uid, row["recipes"], row["title"][:24]))
+
     out.write("\n## A2 组：含流体/化学品原料的配方页面（%d）\n\n" % len(fluidic))
     out.write("这些页面的槽位里含流体/化学品等非物品原料。`EditorIngredient` 现在携带"
               "**原料种类**（`IngredientKind`：item / fluid / chemical）、资源 id 和**数量**，"
@@ -294,7 +476,7 @@ def main():
     a2_declared = sum(1 for row in fluidic if status_of(row) == "declared")
     a2_gap = sum(1 for row in fluidic if status_of(row) == "gap")
     out.write("本组 %d 页里 %d 页已声明、%d 页标 `gap`（共用已声明 serializer 但配方在 reload 时生成、"
-              "没有配方 JSON 可打补丁），其余仍是 `todo`；每页的具体成因见各声明文件里"
+              "没有配方 JSON 可打补丁），`todo` 0 页；每页的具体成因见各声明文件里"
               "紧邻该页的注释。\n\n" % (len(fluidic), a2_declared, a2_gap))
     out.write("这一轮为「声明语言本身挡住的页面」补了四样最小能力，机制都只在声明层与写回层，"
               "不针对某个模组特判（只有具体推导写在对应模组的声明文件里）：\n\n")
@@ -378,18 +560,22 @@ def main():
               "会连带改变所有用到该标签的配方 |\n")
     out.write("| `jei:information`、`minecraft:compostable`、锻造纹饰配方 | 产出槽为空 | 不是缺陷："
               "编辑器的契约就是产出槽为空时不可编辑，客户端测试按同一契约断言 |\n\n")
-    out.write("另外实测到 7 个**没有声明却能建模**的页面：`create:automatic_packing`、"
-              "`automatic_shaped`、`automatic_shapeless`、`block_cutting`、`fan_blasting`、"
-              "`fan_smoking`、`jerm:jerm_repair`。它们能建模是因为页面上显示的配方最终就是编辑器真正实现的 "
+    out.write("另外实测到 7 个**没有声明却能建模**的页面，其中 6 个已经按事实记入清单（见 A1 组的两张说明表）："
+              "`create:automatic_packing`、`automatic_shaped`、`automatic_shapeless`、`block_cutting`、"
+              "`fan_blasting`、`fan_smoking`。它们能建模是因为页面上显示的配方最终就是编辑器真正实现的 "
               "serializer 的配方：`block_cutting` 是 `minecraft:stonecutting`，"
-              "`fan_blasting`/`fan_smoking` 是 `minecraft:smelting`/`smoking`，三个 `create:automatic_*` "
+              "`fan_blasting`/`fan_smoking` 是 `minecraft:smelting`/`smoking`，而三个 `create:automatic_*` "
               "页面的补丁携带的是配方管理器里那份底层配方的 crafting serializer（dump 里的 `create:basin` "
-              "只是为 JEI 展示转换出来的 holder 的 serializer），写回走 vanilla 分支，所以不需要声明；"
-              "`jerm:jerm_repair` 则是 JEI 自己的铁砧页，走 `jei:*` 合成页路径，编辑由 UI 与服务端的只读策略拒绝。\n\n")
+              "只是为 JEI 展示转换出来的 holder 的 serializer），写回走 vanilla 分支，所以既不需要声明、"
+              "也不能加声明（按 serializer 的声明会把页面从 vanilla 适配器手里拿走）。"
+              "最后一个 `jerm:jerm_repair` 仍是「能建模但不记入」：它是 JEI 自己的铁砧页，走 `jei:*` 合成页路径，"
+              "编辑由 UI 与服务端的只读策略拒绝，因此留在客户端的「报告但不算失败」一侧。\n\n")
     out.write("vanilla 适配器只认自己实现的 serializer（`RecipeEditorAdapters.isImplementedVanillaSerializer`），"
               "不按配方类匹配，所以这份名单比收紧前短：`silentgear:gear_crafting` 的 "
               "`silentgear:compound_part` 配方类继承 `ShapelessRecipe`，曾被当作合成网格 offer 出来，"
-              "而服务端对它的补丁一律回答 `stale or unsupported patch`（补丁从未落盘），收紧后该页回到 0 模型。"
+              "而服务端对它的补丁一律回答 `stale or unsupported patch`（补丁从未落盘），收紧后该页回到 0 模型；"
+              "本轮改为给该页的两个 serializer（`silentgear:gear_crafting`、`silentgear:compound_part`）"
+              "出**声明**，补丁改走声明路径，页面因此重新可编辑。"
               "`create:automatic_shaped`（39 → 32 个模型）与 `create:automatic_shapeless`（40 → 24）"
               "只失去 serializer 不是 vanilla crafting 的子项，例如 "
               "`refinedstorage:recoloring`——它自己的 codec 要 `ingredient`/`dye`，而重建出来的是 "
@@ -424,7 +610,9 @@ def main():
               "`create:empty_<item>_of_<fluid>`），管理器里没有、也没有资源文件；Create 的 `DynamicPack`"
               "（`Pack$Position.BOTTOM`）只放 cutting/washing 配方与标签 |\n")
     out.write("| `create:filling`（`create:spout_filling`，页面 50 条） | 12 | 12 | 同上，"
-              "`SpoutCategory#consumeRecipes` 现算 `fill_<item>_with_<fluid>`；12 条数据包配方已可用 |\n")
+              "`SpoutCategory#consumeRecipes` 现算 `fill_<item>_with_<fluid>`；12 条数据包配方已可用。"
+              "本轮已按 `SpoutCategory.setRecipe` 的槽序（item → fluid → 产出）推导出声明"
+              "（`CreateSpoutSlotSequence`），这一页现在是 `declared`，覆盖率 12/50 |\n")
     out.write("| `create:mixing`（`create:automatic_brewing`，页面 286 条） | 13 | 13 | 286 条来自 "
               "`PotionMixingRecipes#createRecipes(Level)` 的静态表（读 vanilla `PotionBrewing` 现造 "
               "`RecipeHolder`），世界里的机械搅拌器也直接读这份缓存，从不写进管理器 |\n")
@@ -480,7 +668,11 @@ def main():
     out.write("| 波次 | 范围 | 目标 | 状态 |\n| --- | --- | --- | --- |\n")
     out.write("| W0 | 框架 | 声明式模组配方适配器（每模组一份声明 + 按 JEI 槽视图建模 + 原始 JSON 打补丁） | done |\n")
     plain_declared = sum(1 for row in plain if status_of(row) == "declared")
-    out.write("| W1 | A1 组 | A1 表 %d 页，已声明 %d 个、仍是 todo %d 个；另有 %d 个非 RecipeHolder 页"
+    plain_done = sum(1 for row in plain if status_of(row) == "done")
+    plain_gap = sum(1 for row in plain if status_of(row) == "gap")
+    plain_todo = sum(1 for row in plain if status_of(row) == "todo")
+    out.write("| W1 | A1 组 | A1 表 %d 页：已声明 %d 个、vanilla 适配器直接接管的 %d 个、`gap` %d 个、"
+              "仍是 todo %d 个；另有 %d 个非 RecipeHolder 页"
               "（B 组）也已声明。未声明页的成因有三类：serializer 本身就是 vanilla 或与别的模组共用"
               "（写回走 vanilla 适配器，不能再加声明，否则会顶掉 vanilla 页）；配方由模组在运行时生成、"
               "没有配方 JSON 可打补丁；网格或多输入数组形状。`immersiveengineering:sawmill` 与 "
@@ -489,18 +681,42 @@ def main():
               "`mekanism:smelting` 显示的就是 vanilla `minecraft:smelting` 的配方本身，只是 id 被模组改写，"
               "因此按别名还原成真实配方后接入（见「运行时合成页面的真实来源」）"
               " | in_progress |\n"
-              % (len(plain), plain_declared, len(plain) - plain_declared, len(DECLARED_UIDS)))
-    out.write("| W2 | A2 组 | 含流体/化学品的 %d 页：声明 %d 页、`gap` %d 页，其余 %d 页仍只读——"
-              "3 页（`create:automatic_brewing` / `draining` / `spout_filling`）的配方由模组在运行时合成、"
-              "没有配方 JSON 可打补丁（`create:automatic_brewing` 与 `create:mixing` 共用 serializer，"
-              "声明把它列为只读页，清单因此记 `gap`）；其余 IE 流体/网格页尚未声明。这三页的成因已由"
-              "「运行时合成页面的真实来源」一节的实测坐实：它们的配方根本不在服务端的配方管理器里。原先被挡住的 "
+              % (len(plain), plain_declared, plain_done, plain_gap, plain_todo, len(DECLARED_UIDS)))
+    out.write("| W2 | A2 组 | 含流体/化学品的 %d 页：声明 %d 页、`gap` %d 页，其余 %d 页仍未接入——"
+              "`create:spout_filling` 已按 `SpoutCategory.setRecipe` 的槽序（item → fluid → 产出）"
+              "由 `CreateSpoutSlotSequence` 接入（覆盖 12/50，其余是运行时生成或条件未满足的文件）；"
+              "`create:draining` 试过并**回退**：按 `ItemDrainCategory` 的槽序（item → fluid → item）"
+              "写出的声明让 40 条采样全部建模，但其中 78/80 的条目是现算的（管理器里没有），"
+              "它们画出的输入槽是带组件补丁的堆叠、物品产出为空，客户端测试的派生形状断言因此报出 "
+              "57 条失败（`draws 1 input slots but its item band (0) and fluid band (0) hold 0`、"
+              "`leaves the item/fluid slot output.1 empty`），所以该页按事实记 `gap`。"
+              "回退的原因**不是**路径寻址：本轮的空路径槽（`DerivedSlot` 的 paths 为空）已经能表达"
+              "「这个槽没有字段」，但 draining 卡住的是**模型侧解析**——页面上那个槽显示的是带组件补丁的"
+              "堆叠、产出槽是空的，编辑器的物品原料只有 `id + count`，解析不出代表原料，而派生契约要求"
+              "声明了非纯物品种类的页面不能留一个解析不出来的槽。它需要的是「一个模型解析不出来的槽」"
+              "这类表达能力（外加最小的原料模型扩展），而不是一条新声明。"
+              "（`create:automatic_brewing` 与 `create:mixing` 共用 serializer，声明把它列为只读页，"
+              "清单因此记 `gap`。）这些数字来自「运行时合成页面的真实来源」一节的专用探针。原先被挡住的 "
               "`create:mixing` / `create:packing` 已由**配方推导的槽位序列**接入：它们的槽位顺序来自 "
               "`ItemHelper.condenseIngredients` 的合并与「物品槽在前、流体槽在后」的重排，字段列表"
-              "推不出来，所以声明把这个推导本身写下来（见 A2 组说明里的第四条） | in_progress |\n"
+              "推不出来，所以声明把这个推导本身写下来（见 A2 组说明里的第四条）；IE 的流体页"
+              "（`refinery`/`mixer`/`coke_oven`/`fermenter`/`squeezer`）与需要序列的 "
+              "`cloche`/`bottling_machine`/`fertilizer`/`blast_furnace_fuel` 也已全部接入 | in_progress |\n"
               % (len(fluidic), a2_declared, a2_gap, len(fluidic) - a2_declared - a2_gap))
-    out.write("| W3 | B 组 | 逐个确认哪些合成页有可落盘的数据来源，再做 %d 页；候选调查见 "
-              "`build/tmp/jei-synthetic-survey.md` | pending |\n" % len(synthetic))
+    out.write("| W3 | B 组 | 普查完成：%d 页里 %d 页已逐页判定（各自理由写在生成器的集合与注释里："
+              "已声明、或按事实记 `gap`；`todo` 已清空），候选调查见 "
+              "`build/tmp/jei-synthetic-survey.md`。剩下的都不是「再写一条声明」能解决的，见 W4 "
+              "| in_progress |\n" % (len(synthetic), len(synthetic)))
+    out.write("| W4 | 新机制 | 三个「需要新机制」的页面都已用**派生契约**接入："
+              "`cobblemon:campfire_pot_recipe` 与 `create:mechanical_crafting` 靠 "
+              "`DerivedSlotSequence.fieldBackedInputOrdinals` 告诉客户端「哪些输入槽位有字段」"
+              "（campfire_pot 的 seasoning 预览槽在**末尾**、被建模成只读；mechanical_crafting 的"
+              "`pattern` 按**稠密格子**一格一槽，空格格的空路径夹在字母格**中间**，补丁打到它上面会被整条拒绝）；"
+              "`create:sequenced_assembly` 靠**逐槽路径**——其槽位顺着 `sequence` 的每一步排布"
+              "（base `ingredient`、deploying 画该步第 2 个物品、filling 画该步第 1 个流体、pressing/cutting 不画），"
+              "所以序号到字段是一张路径表而不是模式。仍需要机制的只有 `create:draining`"
+              "（试接后按 57 条实测失败回退：它卡在模型侧解析——输入槽是带组件补丁的堆叠、物品产出为空，"
+              "需要「一个模型解析不出来的槽」这类表达能力，空路径槽解决不了它） | pending |\n")
     out.write("| — | C 组 | 不接入 | n/a |\n")
 
     out.write("\n## 复现\n\n")

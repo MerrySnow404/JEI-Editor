@@ -123,6 +123,23 @@ public interface ModdedRecipeAdapter {
     }
 
     /**
+     * Whether the declared item field {@code path} was named by a repeatable
+     * ({@code %d}) pattern, i.e. it is one element of a variable-arity array.
+     *
+     * <p>Only such an element may be <em>removed</em> to express "this one is gone":
+     * a cleared element of a fixed array field has no empty form the mods' codecs
+     * accept ({@code minecraft:air} with count 0 is refused by the recipe loader), so
+     * the write path refuses that patch instead. Create's
+     * {@code create:item_application} is what that guards: its page draws two inputs
+     * and {@code ItemApplicationRecipe.getRequiredHeldItem()} throws
+     * {@code "Item Application Recipe has no tool!"} when the decoded ingredient list
+     * holds fewer than two entries, which takes JEI's whole recipe area down with it.
+     */
+    default boolean isRepeatField(String path) {
+        return false;
+    }
+
+    /**
      * Whether the declared item field {@code path} is a <em>nested</em> ingredient
      * node whose editable base has to be rewritten in place, keeping every other
      * part of the node.

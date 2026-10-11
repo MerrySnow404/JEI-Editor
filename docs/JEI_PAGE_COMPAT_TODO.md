@@ -52,24 +52,24 @@
 
 | 页面 uid | 配方数 | JEI 原料槽（入/出） | serializer | 状态 |
 | --- | --- | --- | --- | --- |
-| `create:automatic_packing` | 221 | 9 / 1 | `create:basin` | todo |
-| `create:automatic_shaped` | 3002 | 1 / 1 | `minecraft:crafting_shapeless` | todo |
-| `create:automatic_shapeless` | 1094 | 17 / 1 | `create:basin` | todo |
-| `create:block_cutting` | 135 | 15 / 19 | `minecraft:stonecutting` | todo |
+| `create:automatic_packing` | 221 | 9 / 1 | `create:basin` | done |
+| `create:automatic_shaped` | 3002 | 1 / 1 | `minecraft:crafting_shapeless` | done |
+| `create:automatic_shapeless` | 1094 | 17 / 1 | `create:basin` | done |
+| `create:block_cutting` | 135 | 15 / 19 | `minecraft:stonecutting` | done |
 | `create:crushing` | 264 | 1 / 2 | `create:crushing` | declared |
 | `create:deploying` | 176 | 2 / 1 | `create:deploying` | declared |
-| `create:fan_blasting` | 273 | 1 / 1 | `minecraft:smelting` | todo |
+| `create:fan_blasting` | 273 | 1 / 1 | `minecraft:smelting` | done |
 | `create:fan_haunting` | 22 | 1 / 1 | `create:haunting` | declared |
-| `create:fan_smoking` | 12 | 1 / 1 | `minecraft:smoking` | todo |
+| `create:fan_smoking` | 12 | 1 / 1 | `minecraft:smoking` | done |
 | `create:fan_washing` | 42 | 1 / 1 | `create:splashing` | declared |
 | `create:item_application` | 28 | 14 / 1 | `create:item_application` | declared |
-| `create:mechanical_crafting` | 4 | 77 / 1 | `create:mechanical_crafting` | todo |
+| `create:mechanical_crafting` | 4 | 77 / 1 | `create:mechanical_crafting` | declared |
 | `create:milling` | 125 | 1 / 2 | `create:milling` | declared |
-| `create:mystery_conversion` | 2 | 1 / 1 | `create:conversion` | todo |
+| `create:mystery_conversion` | 2 | 1 / 1 | `create:conversion` | gap |
 | `create:pressing` | 16 | 2 / 1 | `create:pressing` | declared |
 | `create:sandpaper_polishing` | 1 | 1 / 1 | `create:sandpaper_polishing` | declared |
 | `create:sawing` | 185 | 1 / 1 | `create:cutting` | declared |
-| `create:sequenced_assembly` | 3 | 7 / 1 | `create:sequenced_assembly` | todo |
+| `create:sequenced_assembly` | 3 | 7 / 1 | `create:sequenced_assembly` | declared |
 
 **Immersive Engineering**（`immersiveengineering`）
 
@@ -79,10 +79,10 @@
 | `immersiveengineering:arc_furnace` | 54 | 2 / 1 | `immersiveengineering:arc_furnace` | declared |
 | `immersiveengineering:arc_recycling` | 188 | 1 / 1 | `immersiveengineering:arc_furnace` | gap |
 | `immersiveengineering:blast_furnace` | 2 | 1 / 2 | `immersiveengineering:blast_furnace` | declared |
-| `immersiveengineering:blast_furnace_fuel` | 4 | 1 / 0 | `immersiveengineering:blast_furnace_fuel` | todo |
+| `immersiveengineering:blast_furnace_fuel` | 4 | 1 / 0 | `immersiveengineering:blast_furnace_fuel` | declared |
 | `immersiveengineering:blueprint` | 61 | 7 / 1 | `immersiveengineering:blueprint` | declared |
 | `immersiveengineering:crusher` | 82 | 2 / 1 | `immersiveengineering:crusher` | declared |
-| `immersiveengineering:fertilizer` | 5 | 1 / 0 | `immersiveengineering:fertilizer` | todo |
+| `immersiveengineering:fertilizer` | 5 | 1 / 0 | `immersiveengineering:fertilizer` | declared |
 | `immersiveengineering:metal_press` | 24 | 1 / 1 | `immersiveengineering:metal_press` | declared |
 | `immersiveengineering:sawmill` | 72 | 1 / 4 | `immersiveengineering:sawmill` | declared |
 
@@ -90,8 +90,8 @@
 
 | 页面 uid | 配方数 | JEI 原料槽（入/出） | serializer | 状态 |
 | --- | --- | --- | --- | --- |
-| `jearchaeology:brush` | 7 | 2 / 10 | `jearchaeology:brush` | todo |
-| `jearchaeology:sniff` | 1 | 0 / 2 | `jearchaeology:sniff` | todo |
+| `jearchaeology:brush` | 7 | 2 / 10 | `jearchaeology:brush` | gap |
+| `jearchaeology:sniff` | 1 | 0 / 2 | `jearchaeology:sniff` | gap |
 
 **Mekanism**（`mekanism`）
 
@@ -99,7 +99,7 @@
 | --- | --- | --- | --- | --- |
 | `mekanism:combining` | 82 | 2 / 1 | `mekanism:combining` | declared |
 | `mekanism:crushing` | 230 | 1 / 1 | `mekanism:crushing` | declared |
-| `mekanism:energy_conversion` | 2 | 1 / 0 | `mekanism:energy_conversion` | todo |
+| `mekanism:energy_conversion` | 2 | 1 / 0 | `mekanism:energy_conversion` | declared |
 | `mekanism:enriching` | 195 | 1 / 1 | `mekanism:enriching` | declared |
 | `mekanism:sawing` | 124 | 1 / 1 | `mekanism:sawing` | declared |
 | `mekanism:smelting` | 284 | 1 / 1 | `mekanism:smelting` | declared |
@@ -108,21 +108,37 @@
 
 | 页面 uid | 配方数 | JEI 原料槽（入/出） | serializer | 状态 |
 | --- | --- | --- | --- | --- |
-| `minecraft:overworld` | 53 | 3 / 112 | `—` | todo |
-| `minecraft:the_end` | 5 | 1 / 24 | `—` | todo |
-| `minecraft:the_nether` | 5 | 9 / 38 | `—` | todo |
+| `minecraft:overworld` | 53 | 3 / 112 | `—` | gap |
+| `minecraft:the_end` | 5 | 1 / 24 | `—` | gap |
+| `minecraft:the_nether` | 5 | 9 / 38 | `—` | gap |
 
 **NNP Easy Farming**（`nnp_easy_farming`）
 
 | 页面 uid | 配方数 | JEI 原料槽（入/出） | serializer | 状态 |
 | --- | --- | --- | --- | --- |
-| `nnp_easy_farming:farming_stem` | 3 | 8 / 47 | `—` | todo |
+| `nnp_easy_farming:farming_stem` | 3 | 8 / 47 | `—` | gap |
+
+A1 表里状态 `done` 但 serializer 列写着 vanilla 名称的 4 页，显示的**就是**配方管理器里那条 vanilla 配方（id 未被改写、serializer 也没变），写回走它自己的 vanilla 适配器，因此既不需要声明、也不能加声明（按 serializer 的声明会把页面从 vanilla 适配器手里拿走）。它们的 `done` 由 `scripts/jei-client-tests.ps1` 断言（每页至少一个模型），写回形状由 `scripts/jei-declared-smoke.ps1` 里对应 serializer 的用例钉住：
+
+| 页面 uid | 配方数 | 显示的配方 serializer | 说明 |
+| --- | --- | --- | --- |
+| `create:automatic_shaped` | 3002 | `minecraft:crafting_shapeless` | 自动合成 |
+| `create:block_cutting` | 135 | `minecraft:stonecutting` | 方块切割 |
+| `create:fan_blasting` | 273 | `minecraft:smelting` | 批量熔炼 |
+| `create:fan_smoking` | 12 | `minecraft:smoking` | 批量烟熏 |
+
+另有两页的 serializer 列写着模组自己的名字，但**那条 id 指向的真正配方**是 vanilla 的：Create 把这两页的条目包成自己的 `BasinRecipeHolder` 展示，而 id 落到配方管理器里仍是 `minecraft:crafting_shaped` / `crafting_shapeless`，编辑器按 identity/`byKey` 找到真配方再按 vanilla 分支写回（与 `mekanism:smelting` 的别名同一情形，只是 id 没被改写，静态规则看不出来，所以在这里具名）：
+
+| 页面 uid | 配方数 | 说明 | 客户端建模 |
+| --- | --- | --- | --- |
+| `create:automatic_packing` | 221 | 自动压缩 | 见 §门禁页面的建模覆盖 |
+| `create:automatic_shapeless` | 1094 | 自动搅拌 | 见 §门禁页面的建模覆盖 |
 
 ## A2 组：含流体/化学品原料的配方页面（36）
 
 这些页面的槽位里含流体/化学品等非物品原料。`EditorIngredient` 现在携带**原料种类**（`IngredientKind`：item / fluid / chemical）、资源 id 和**数量**，数量范围按种类区分（物品 1..64；流体/化学品是 mB 体积，1..1000000），补丁字段名也随之分种类：物品沿用 `.item`/`.count`，流体是 `.fluid`/`.fluid_amount`，化学品是 `.chemical`/`.chemical_amount`。声明用 `withFluidFields`/`withChemicalFields`标出每个字段的种类，客户端只对得上种类的槽位给出拖放目标，服务端拒绝种类不符的补丁，写回时按该模组自己的 stack JSON 形状生成（IE 的流体输入是`{"fluid":id,"amount":n}`，流体结果是 `{"amount":n,"id":id}`；Mekanism 的化学品输入是 `{"amount":n,"chemical":id}`，输出是 `{"amount":n,"id":id}`）。
 
-本组 36 页里 26 页已声明、2 页标 `gap`（共用已声明 serializer 但配方在 reload 时生成、没有配方 JSON 可打补丁），其余仍是 `todo`；每页的具体成因见各声明文件里紧邻该页的注释。
+本组 36 页里 31 页已声明、5 页标 `gap`（共用已声明 serializer 但配方在 reload 时生成、没有配方 JSON 可打补丁），`todo` 0 页；每页的具体成因见各声明文件里紧邻该页的注释。
 
 这一轮为「声明语言本身挡住的页面」补了四样最小能力，机制都只在声明层与写回层，不针对某个模组特判（只有具体推导写在对应模组的声明文件里）：
 
@@ -138,25 +154,25 @@
 | 页面 uid | 配方数 | JEI 原料槽（入/出） | serializer | 状态 |
 | --- | --- | --- | --- | --- |
 | `create:automatic_brewing` | 286 | 2 / 1 | `create:mixing` | gap |
-| `create:draining` | 80 | 1 / 2 | `create:emptying` | todo |
+| `create:draining` | 80 | 1 / 2 | `create:emptying` | gap |
 | `create:mixing` | 13 | 4 / 1 | `create:mixing` | declared |
 | `create:packing` | 7 | 2 / 1 | `create:compacting` | declared |
-| `create:spout_filling` | 50 | 16 / 1 | `create:filling` | todo |
+| `create:spout_filling` | 50 | 16 / 1 | `create:filling` | declared |
 
 **Immersive Engineering**（`immersiveengineering`）
 
 | 页面 uid | 配方数 | JEI 原料槽（入/出） | serializer | 状态 |
 | --- | --- | --- | --- | --- |
-| `immersiveengineering:bottling_buckets` | 37 | 2 / 1 | `immersiveengineering:bottling_machine` | todo |
-| `immersiveengineering:bottling_machine` | 28 | 3 / 1 | `immersiveengineering:bottling_machine` | todo |
-| `immersiveengineering:bottling_potions` | 175 | 3 / 1 | `immersiveengineering:bottling_machine` | todo |
-| `immersiveengineering:cloche` | 40 | 2 / 1 | `immersiveengineering:cloche` | todo |
+| `immersiveengineering:bottling_buckets` | 37 | 2 / 1 | `immersiveengineering:bottling_machine` | gap |
+| `immersiveengineering:bottling_machine` | 28 | 3 / 1 | `immersiveengineering:bottling_machine` | declared |
+| `immersiveengineering:bottling_potions` | 175 | 3 / 1 | `immersiveengineering:bottling_machine` | gap |
+| `immersiveengineering:cloche` | 40 | 2 / 1 | `immersiveengineering:cloche` | declared |
 | `immersiveengineering:coke_oven` | 3 | 41 / 2 | `immersiveengineering:coke_oven` | declared |
-| `immersiveengineering:fermenter` | 8 | 1 / 1 | `immersiveengineering:fermenter` | todo |
+| `immersiveengineering:fermenter` | 8 | 1 / 1 | `immersiveengineering:fermenter` | declared |
 | `immersiveengineering:mixer` | 3 | 7 / 1 | `immersiveengineering:mixer` | declared |
 | `immersiveengineering:mixer_potions` | 255 | 3 / 1 | `immersiveengineering:mixer` | gap |
 | `immersiveengineering:refinery` | 4 | 2 / 1 | `immersiveengineering:refinery` | declared |
-| `immersiveengineering:squeezer` | 6 | 1 / 1 | `immersiveengineering:squeezer` | todo |
+| `immersiveengineering:squeezer` | 6 | 1 / 1 | `immersiveengineering:squeezer` | declared |
 
 **Mekanism**（`mekanism`）
 
@@ -192,26 +208,26 @@
 
 | 页面 uid | 配方数 | JEI 原料槽（入/出） | 说明 | 状态 |
 | --- | --- | --- | --- | --- |
-| `betterpiglintrades:piglin_barter` | 3 | 1 / 20 | Piglin Bartering | todo |
+| `betterpiglintrades:piglin_barter` | 3 | 1 / 20 | Piglin Bartering | gap |
 
 **Cobblemon**（`cobblemon`）
 
 | 页面 uid | 配方数 | JEI 原料槽（入/出） | 说明 | 状态 |
 | --- | --- | --- | --- | --- |
-| `cobblemon:berry_recipe` | 77 | 2 / 1 | Berry Mutation | todo |
-| `cobblemon:campfire_pot_recipe` | 118 | 4 / 1 | 营火锅 | todo |
+| `cobblemon:berry_recipe` | 77 | 2 / 1 | Berry Mutation | gap |
+| `cobblemon:campfire_pot_recipe` | 118 | 4 / 1 | 营火锅 | declared |
 
 **Resource Geodes & Catalysts**（`createresourcegeodes`）
 
 | 页面 uid | 配方数 | JEI 原料槽（入/出） | 说明 | 状态 |
 | --- | --- | --- | --- | --- |
-| `createresourcegeodes:catalyst_generation` | 17 | 2 / 1 | Catalyst Generation | todo |
+| `createresourcegeodes:catalyst_generation` | 17 | 2 / 1 | Catalyst Generation | gap |
 
 **Horse Powered**（`horsepowered`）
 
 | 页面 uid | 配方数 | JEI 原料槽（入/出） | 说明 | 状态 |
 | --- | --- | --- | --- | --- |
-| `horsepowered:bottling` | 1 | 1 / 1 | Bottling | todo |
+| `horsepowered:bottling` | 1 | 1 / 1 | Bottling | gap |
 | `horsepowered:chopping` | 25 | 17 / 1 | Horse Chopping | declared |
 | `horsepowered:crushing` | 10 | 1 / 1 | Crushing | declared |
 | `horsepowered:drying` | 6 | 1 / 1 | Drying | declared |
@@ -219,31 +235,31 @@
 | `horsepowered:manual_chopping` | 25 | 17 / 1 | Manual Chopping | declared |
 | `horsepowered:manual_grinding` | 28 | 1 / 1 | Manual Grinding | declared |
 | `horsepowered:pressing` | 37 | 1 / 1 | Horse Pressing | declared |
-| `horsepowered:trapping` | 9 | 1 / 1 | Trapping | todo |
+| `horsepowered:trapping` | 9 | 1 / 1 | Trapping | gap |
 
 **Just Enough Beacons Reforged**（`just_enough_beacons`）
 
 | 页面 uid | 配方数 | JEI 原料槽（入/出） | 说明 | 状态 |
 | --- | --- | --- | --- | --- |
-| `just_enough_beacons:beacon_base_block` | 1 | 0 / 0 | Beacon Base Blocks | todo |
-| `just_enough_beacons:beacon_payment` | 1 | 0 / 0 | Beacon Payments | todo |
-| `just_enough_beacons:conduit_frame_block` | 1 | 0 / 0 | Conduit Frame Blocks | todo |
+| `just_enough_beacons:beacon_base_block` | 1 | 0 / 0 | Beacon Base Blocks | gap |
+| `just_enough_beacons:beacon_payment` | 1 | 0 / 0 | Beacon Payments | gap |
+| `just_enough_beacons:conduit_frame_block` | 1 | 0 / 0 | Conduit Frame Blocks | gap |
 
 **Mekanism**（`mekanism`）
 
 | 页面 uid | 配方数 | JEI 原料槽（入/出） | 说明 | 状态 |
 | --- | --- | --- | --- | --- |
-| `mekanism:boiler_casing` | 2 | 2 / 1 | 热力锅炉 | todo |
-| `mekanism:nutritional_liquifier` | 89 | 1 / 1 | 营养液化器 | todo |
-| `mekanism:sps_casing` | 1 | 1 / 1 | 超临界移相器 | todo |
+| `mekanism:boiler_casing` | 2 | 2 / 1 | 热力锅炉 | gap |
+| `mekanism:nutritional_liquifier` | 89 | 1 / 1 | 营养液化器 | gap |
+| `mekanism:sps_casing` | 1 | 1 / 1 | 超临界移相器 | gap |
 
 **Minecraft / JEI 本体**（`minecraft`）
 
 | 页面 uid | 配方数 | JEI 原料槽（入/出） | 说明 | 状态 |
 | --- | --- | --- | --- | --- |
-| `minecraft:tag_recipes/block` | 575 | 1 / 1 | 方块标签 | todo |
-| `minecraft:tag_recipes/fluid` | 45 | 2 / 2 | 流体标签 | todo |
-| `minecraft:tag_recipes/item` | 1052 | 1 / 1 | 物品标签 | todo |
+| `minecraft:tag_recipes/block` | 575 | 1 / 1 | 方块标签 | gap |
+| `minecraft:tag_recipes/fluid` | 45 | 2 / 2 | 流体标签 | gap |
+| `minecraft:tag_recipes/item` | 1052 | 1 / 1 | 物品标签 | gap |
 
 **NNP Easy Farming**（`nnp_easy_farming`）
 
@@ -261,20 +277,20 @@
 
 | 页面 uid | 配方数 | JEI 原料槽（入/出） | 说明 | 状态 |
 | --- | --- | --- | --- | --- |
-| `silentgear:alloy_making/fabric` | 3 | 52 / 1 | Fabric Alloys | todo |
-| `silentgear:alloy_making/gem` | 4 | 2 / 1 | Gem Alloys | todo |
-| `silentgear:alloy_making/metal` | 8 | 4 / 1 | Metal Alloys | todo |
-| `silentgear:alloy_making/super` | 3 | 276 / 1 | Super Alloys | todo |
-| `silentgear:gear_crafting` | 113 | 272 / 1 | Gear Crafting | todo |
-| `silentgear:grading` | 1 | 173 / 0 | Grading | todo |
-| `silentgear:salvaging` | 88 | 1 / 0 | Salvaging | todo |
-| `silentgear:tool_action` | 9 | 4 / 1 | Tool Action | todo |
+| `silentgear:alloy_making/fabric` | 3 | 52 / 1 | Fabric Alloys | gap |
+| `silentgear:alloy_making/gem` | 4 | 2 / 1 | Gem Alloys | declared |
+| `silentgear:alloy_making/metal` | 8 | 4 / 1 | Metal Alloys | declared |
+| `silentgear:alloy_making/super` | 3 | 276 / 1 | Super Alloys | gap |
+| `silentgear:gear_crafting` | 113 | 272 / 1 | Gear Crafting | declared |
+| `silentgear:grading` | 1 | 173 / 0 | Grading | gap |
+| `silentgear:salvaging` | 88 | 1 / 0 | Salvaging | declared |
+| `silentgear:tool_action` | 9 | 4 / 1 | Tool Action | declared |
 
 **Smithing Template Viewer**（`smithingtemplateviewer`）
 
 | 页面 uid | 配方数 | JEI 原料槽（入/出） | 说明 | 状态 |
 | --- | --- | --- | --- | --- |
-| `smithingtemplateviewer:smithing_trim` | 19 | 52 / 0 | Smithing Trim Viewer | todo |
+| `smithingtemplateviewer:smithing_trim` | 19 | 52 / 0 | Smithing Trim Viewer | gap |
 
 ## C 组：信息页（66，不适用可视化编辑）
 
@@ -427,7 +443,7 @@
 
 每页最多记录 3 个建模样本的完整槽位内容（`modelled_samples` 里 `{key=role:kind:id:amount;…}` 那段），服务端探针用例用它复现同一模型的 `base_fingerprint`（指纹哈希的就是`kind:id:amount`，所以流体槽位不会和同 id 同数量的物品槽位撞哈希）：`scripts/jei-declared-smoke.ps1` 只把声明页面的指纹当松弛值，未声明页面必须给出真实指纹，否则补丁会被当作过期改动拒绝。
 
-69 个已接入页面（清单里状态为 `done`/`declared` 的行）都要在客户端测试里至少建出一个模型；接入过程中实测发现的三类问题：
+91 个已接入页面（清单里状态为 `done`/`declared` 的行）都要在客户端测试里至少建出一个模型；接入过程中实测发现的三类问题：
 
 | 页面 | 现象 | 性质 |
 | --- | --- | --- |
@@ -435,9 +451,9 @@
 | `minecraft:tag_recipes/item`、`/block`、`/fluid` | 0 个模型 | JEI 直接推 `TagInfoRecipe`，既不是 `RecipeHolder` 也不是 `Recipe`，编辑器所有路径都不认 → 不是已支持页面。这不是缺口：标签页显示的是标签的成员列表（入槽与出槽是同一批成员），那是 `tags/` 注册表里的标签数据而不是配方记录，所以没有可写的配方编辑——「编辑」它等于改写标签，会连带改变所有用到该标签的配方 |
 | `jei:information`、`minecraft:compostable`、锻造纹饰配方 | 产出槽为空 | 不是缺陷：编辑器的契约就是产出槽为空时不可编辑，客户端测试按同一契约断言 |
 
-另外实测到 7 个**没有声明却能建模**的页面：`create:automatic_packing`、`automatic_shaped`、`automatic_shapeless`、`block_cutting`、`fan_blasting`、`fan_smoking`、`jerm:jerm_repair`。它们能建模是因为页面上显示的配方最终就是编辑器真正实现的 serializer 的配方：`block_cutting` 是 `minecraft:stonecutting`，`fan_blasting`/`fan_smoking` 是 `minecraft:smelting`/`smoking`，三个 `create:automatic_*` 页面的补丁携带的是配方管理器里那份底层配方的 crafting serializer（dump 里的 `create:basin` 只是为 JEI 展示转换出来的 holder 的 serializer），写回走 vanilla 分支，所以不需要声明；`jerm:jerm_repair` 则是 JEI 自己的铁砧页，走 `jei:*` 合成页路径，编辑由 UI 与服务端的只读策略拒绝。
+另外实测到 7 个**没有声明却能建模**的页面，其中 6 个已经按事实记入清单（见 A1 组的两张说明表）：`create:automatic_packing`、`automatic_shaped`、`automatic_shapeless`、`block_cutting`、`fan_blasting`、`fan_smoking`。它们能建模是因为页面上显示的配方最终就是编辑器真正实现的 serializer 的配方：`block_cutting` 是 `minecraft:stonecutting`，`fan_blasting`/`fan_smoking` 是 `minecraft:smelting`/`smoking`，而三个 `create:automatic_*` 页面的补丁携带的是配方管理器里那份底层配方的 crafting serializer（dump 里的 `create:basin` 只是为 JEI 展示转换出来的 holder 的 serializer），写回走 vanilla 分支，所以既不需要声明、也不能加声明（按 serializer 的声明会把页面从 vanilla 适配器手里拿走）。最后一个 `jerm:jerm_repair` 仍是「能建模但不记入」：它是 JEI 自己的铁砧页，走 `jei:*` 合成页路径，编辑由 UI 与服务端的只读策略拒绝，因此留在客户端的「报告但不算失败」一侧。
 
-vanilla 适配器只认自己实现的 serializer（`RecipeEditorAdapters.isImplementedVanillaSerializer`），不按配方类匹配，所以这份名单比收紧前短：`silentgear:gear_crafting` 的 `silentgear:compound_part` 配方类继承 `ShapelessRecipe`，曾被当作合成网格 offer 出来，而服务端对它的补丁一律回答 `stale or unsupported patch`（补丁从未落盘），收紧后该页回到 0 模型。`create:automatic_shaped`（39 → 32 个模型）与 `create:automatic_shapeless`（40 → 24）只失去 serializer 不是 vanilla crafting 的子项，例如 `refinedstorage:recoloring`——它自己的 codec 要 `ingredient`/`dye`，而重建出来的是 `ingredients`/`result`，写出的 JSON 读不回来。`create:automatic_packing` 不受影响：它的样本全部携带 `minecraft:crafting_shaped`/`crafting_shapeless`。
+vanilla 适配器只认自己实现的 serializer（`RecipeEditorAdapters.isImplementedVanillaSerializer`），不按配方类匹配，所以这份名单比收紧前短：`silentgear:gear_crafting` 的 `silentgear:compound_part` 配方类继承 `ShapelessRecipe`，曾被当作合成网格 offer 出来，而服务端对它的补丁一律回答 `stale or unsupported patch`（补丁从未落盘），收紧后该页回到 0 模型；本轮改为给该页的两个 serializer（`silentgear:gear_crafting`、`silentgear:compound_part`）出**声明**，补丁改走声明路径，页面因此重新可编辑。`create:automatic_shaped`（39 → 32 个模型）与 `create:automatic_shapeless`（40 → 24）只失去 serializer 不是 vanilla crafting 的子项，例如 `refinedstorage:recoloring`——它自己的 codec 要 `ingredient`/`dye`，而重建出来的是 `ingredients`/`result`，写出的 JSON 读不回来。`create:automatic_packing` 不受影响：它的样本全部携带 `minecraft:crafting_shaped`/`crafting_shapeless`。
 
 门禁除了「已接入必须至少建出一个模型」，还反过来断言两个集合必须建出**零**个模型：标 `gap` 的行，以及脚本里锁定的已知不可用页面（三个 `minecraft:tag_recipes/*`）。这样缺口是被断言的事实而不是被忽略的行：哪天有人修好了，门禁会红，提示回来改本清单。
 
@@ -454,7 +470,7 @@ vanilla 适配器只认自己实现的 serializer（`RecipeEditorAdapters.isImpl
 | serializer / 族 | 管理器里的条数 | 其中 JSON 可达 | 真正来源 |
 | --- | --- | --- | --- |
 | `create:emptying`（`create:draining`，页面 80 条） | 2 | 2 | 其余 78 条只存在于 JEI 客户端列表：`ItemDrainCategory#consumeRecipes` 按物品的流体 capability 现算配方（id 形如 `create:empty_<item>_of_<fluid>`），管理器里没有、也没有资源文件；Create 的 `DynamicPack`（`Pack$Position.BOTTOM`）只放 cutting/washing 配方与标签 |
-| `create:filling`（`create:spout_filling`，页面 50 条） | 12 | 12 | 同上，`SpoutCategory#consumeRecipes` 现算 `fill_<item>_with_<fluid>`；12 条数据包配方已可用 |
+| `create:filling`（`create:spout_filling`，页面 50 条） | 12 | 12 | 同上，`SpoutCategory#consumeRecipes` 现算 `fill_<item>_with_<fluid>`；12 条数据包配方已可用。本轮已按 `SpoutCategory.setRecipe` 的槽序（item → fluid → 产出）推导出声明（`CreateSpoutSlotSequence`），这一页现在是 `declared`，覆盖率 12/50 |
 | `create:mixing`（`create:automatic_brewing`，页面 286 条） | 13 | 13 | 286 条来自 `PotionMixingRecipes#createRecipes(Level)` 的静态表（读 vanilla `PotionBrewing` 现造 `RecipeHolder`），世界里的机械搅拌器也直接读这份缓存，从不写进管理器 |
 | `immersiveengineering:arc_furnace`（`arc_recycling`，页面 188 条） | 54 | 54 | 188 条子配方由 IE 的 `CachedRecipeList#updateCache` 从唯一的生成器配方 `arc_recycling_list.json` 展开，只存在 IE 自己的缓存里；管理器里只有那个 `immersiveengineering:generated_list` 生成器本身 |
 | `mekanism:smelting`（页面 284 条） | 0 | — | 页面显示的就是 vanilla `minecraft:smelting` 那 284 条配方，只是被 `RecipeViewerUtils.synthetic(id, "mekanism_generated")` 改了 id；底层配方在管理器里、JSON 也可达 → 按别名接入（见下） |
@@ -481,9 +497,10 @@ vanilla 适配器只认自己实现的 serializer（`RecipeEditorAdapters.isImpl
 | 波次 | 范围 | 目标 | 状态 |
 | --- | --- | --- | --- |
 | W0 | 框架 | 声明式模组配方适配器（每模组一份声明 + 按 JEI 槽视图建模 + 原始 JSON 打补丁） | done |
-| W1 | A1 组 | A1 表 40 页，已声明 21 个、仍是 todo 19 个；另有 9 个非 RecipeHolder 页（B 组）也已声明。未声明页的成因有三类：serializer 本身就是 vanilla 或与别的模组共用（写回走 vanilla 适配器，不能再加声明，否则会顶掉 vanilla 页）；配方由模组在运行时生成、没有配方 JSON 可打补丁；网格或多输入数组形状。`immersiveengineering:sawmill` 与 `arc_furnace` 的多种输出形状已由「有序段列表」（`withConcatenatedOutputs`：按 JEI 类别的加槽顺序把单段/重复段拼接到配方 JSON 上，客户端只看槽数、服务端按 JSON 解析具体字段）接入；`mekanism:smelting` 显示的就是 vanilla `minecraft:smelting` 的配方本身，只是 id 被模组改写，因此按别名还原成真实配方后接入（见「运行时合成页面的真实来源」） | in_progress |
-| W2 | A2 组 | 含流体/化学品的 36 页：声明 26 页、`gap` 2 页，其余 8 页仍只读——3 页（`create:automatic_brewing` / `draining` / `spout_filling`）的配方由模组在运行时合成、没有配方 JSON 可打补丁（`create:automatic_brewing` 与 `create:mixing` 共用 serializer，声明把它列为只读页，清单因此记 `gap`）；其余 IE 流体/网格页尚未声明。这三页的成因已由「运行时合成页面的真实来源」一节的实测坐实：它们的配方根本不在服务端的配方管理器里。原先被挡住的 `create:mixing` / `create:packing` 已由**配方推导的槽位序列**接入：它们的槽位顺序来自 `ItemHelper.condenseIngredients` 的合并与「物品槽在前、流体槽在后」的重排，字段列表推不出来，所以声明把这个推导本身写下来（见 A2 组说明里的第四条） | in_progress |
-| W3 | B 组 | 逐个确认哪些合成页有可落盘的数据来源，再做 33 页；候选调查见 `build/tmp/jei-synthetic-survey.md` | pending |
+| W1 | A1 组 | A1 表 40 页：已声明 26 个、vanilla 适配器直接接管的 6 个、`gap` 8 个、仍是 todo 0 个；另有 15 个非 RecipeHolder 页（B 组）也已声明。未声明页的成因有三类：serializer 本身就是 vanilla 或与别的模组共用（写回走 vanilla 适配器，不能再加声明，否则会顶掉 vanilla 页）；配方由模组在运行时生成、没有配方 JSON 可打补丁；网格或多输入数组形状。`immersiveengineering:sawmill` 与 `arc_furnace` 的多种输出形状已由「有序段列表」（`withConcatenatedOutputs`：按 JEI 类别的加槽顺序把单段/重复段拼接到配方 JSON 上，客户端只看槽数、服务端按 JSON 解析具体字段）接入；`mekanism:smelting` 显示的就是 vanilla `minecraft:smelting` 的配方本身，只是 id 被模组改写，因此按别名还原成真实配方后接入（见「运行时合成页面的真实来源」） | in_progress |
+| W2 | A2 组 | 含流体/化学品的 36 页：声明 31 页、`gap` 5 页，其余 0 页仍未接入——`create:spout_filling` 已按 `SpoutCategory.setRecipe` 的槽序（item → fluid → 产出）由 `CreateSpoutSlotSequence` 接入（覆盖 12/50，其余是运行时生成或条件未满足的文件）；`create:draining` 试过并**回退**：按 `ItemDrainCategory` 的槽序（item → fluid → item）写出的声明让 40 条采样全部建模，但其中 78/80 的条目是现算的（管理器里没有），它们画出的输入槽是带组件补丁的堆叠、物品产出为空，客户端测试的派生形状断言因此报出 57 条失败（`draws 1 input slots but its item band (0) and fluid band (0) hold 0`、`leaves the item/fluid slot output.1 empty`），所以该页按事实记 `gap`。回退的原因**不是**路径寻址：本轮的空路径槽（`DerivedSlot` 的 paths 为空）已经能表达「这个槽没有字段」，但 draining 卡住的是**模型侧解析**——页面上那个槽显示的是带组件补丁的堆叠、产出槽是空的，编辑器的物品原料只有 `id + count`，解析不出代表原料，而派生契约要求声明了非纯物品种类的页面不能留一个解析不出来的槽。它需要的是「一个模型解析不出来的槽」这类表达能力（外加最小的原料模型扩展），而不是一条新声明。（`create:automatic_brewing` 与 `create:mixing` 共用 serializer，声明把它列为只读页，清单因此记 `gap`。）这些数字来自「运行时合成页面的真实来源」一节的专用探针。原先被挡住的 `create:mixing` / `create:packing` 已由**配方推导的槽位序列**接入：它们的槽位顺序来自 `ItemHelper.condenseIngredients` 的合并与「物品槽在前、流体槽在后」的重排，字段列表推不出来，所以声明把这个推导本身写下来（见 A2 组说明里的第四条）；IE 的流体页（`refinery`/`mixer`/`coke_oven`/`fermenter`/`squeezer`）与需要序列的 `cloche`/`bottling_machine`/`fertilizer`/`blast_furnace_fuel` 也已全部接入 | in_progress |
+| W3 | B 组 | 普查完成：33 页里 33 页已逐页判定（各自理由写在生成器的集合与注释里：已声明、或按事实记 `gap`；`todo` 已清空），候选调查见 `build/tmp/jei-synthetic-survey.md`。剩下的都不是「再写一条声明」能解决的，见 W4 | in_progress |
+| W4 | 新机制 | 三个「需要新机制」的页面都已用**派生契约**接入：`cobblemon:campfire_pot_recipe` 与 `create:mechanical_crafting` 靠 `DerivedSlotSequence.fieldBackedInputOrdinals` 告诉客户端「哪些输入槽位有字段」（campfire_pot 的 seasoning 预览槽在**末尾**、被建模成只读；mechanical_crafting 的`pattern` 按**稠密格子**一格一槽，空格格的空路径夹在字母格**中间**，补丁打到它上面会被整条拒绝）；`create:sequenced_assembly` 靠**逐槽路径**——其槽位顺着 `sequence` 的每一步排布（base `ingredient`、deploying 画该步第 2 个物品、filling 画该步第 1 个流体、pressing/cutting 不画），所以序号到字段是一张路径表而不是模式。仍需要机制的只有 `create:draining`（试接后按 57 条实测失败回退：它卡在模型侧解析——输入槽是带组件补丁的堆叠、物品产出为空，需要「一个模型解析不出来的槽」这类表达能力，空路径槽解决不了它） | pending |
 | — | C 组 | 不接入 | n/a |
 
 ## 复现

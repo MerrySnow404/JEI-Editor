@@ -1233,6 +1233,14 @@ public final class RecipeEditsApplier {
             if (!cookingGroup.isEmpty()) {
                 recipe.addProperty("group", cookingGroup);
             }
+            // The category is part of the record for the same reason, and it is the
+            // recipe-book tab the entry appears in ("food", "blocks", "misc"). The
+            // codec reads it as optional with "misc" as its default, so leaving it out
+            // does not fail - it silently moves a smoked food into the "misc" tab,
+            // which is why this is written unconditionally rather than only when it is
+            // not the default.
+            recipe.addProperty("category",
+                    ((AbstractCookingRecipe) holder.value()).category().getSerializedName());
             recipe.add("ingredient", cookingIngredientJson(
                     (AbstractCookingRecipe) holder.value(), patch, inputs.get(0)));
             recipe.addProperty("experience", cookingExperience(model, patch));
@@ -1260,10 +1268,42 @@ public final class RecipeEditsApplier {
         } else {
             return Optional.empty();
         }
+        // A NeoForge condition decides whether the recipe exists at all, not what it
+        // crafts, and it lives only in the JSON: the recipe object the game loaded
+        // does not carry it. This path rebuilds the record from that object, so
+        // without copying it an edit would silently make a gated recipe - "only when
+        // Mekanism is loaded", say - unconditional. 103 of the pack's vanilla-typed
+        // recipe files carry one.
+        copyConditions(server, patch.recipeId(), recipe);
         if (output != null) {
             recipe.add("result", resultJson(output));
         }
         return Optional.of(recipe);
+    }
+
+    /**
+     * Copies the {@code neoforge:conditions} block of a recipe's original JSON into
+     * a rebuilt one that carries it.
+     *
+     * <p>It is read the same way the declared path reads the recipe - the generated
+     * pack file first, the mod's resource otherwise - so a second edit of the same
+     * recipe sees the conditions the first one wrote. A recipe whose JSON cannot be
+     * read keeps the old behaviour rather than failing an edit over it.
+     */
+    private static void copyConditions(MinecraftServer server, String recipeId, JsonObject target) {
+        ResourceLocation id = ResourceLocation.tryParse(recipeId);
+        if (id == null) {
+            return;
+        }
+        try {
+            JsonElement conditions = readRecipeJson(server, id, recipePath(server, id))
+                    .get("neoforge:conditions");
+            if (conditions != null) {
+                target.add("neoforge:conditions", conditions);
+            }
+        } catch (IOException | RuntimeException exception) {
+            // Best effort: the recipe is still written, exactly as before this copy.
+        }
     }
 
     /**
@@ -1316,8 +1356,18 @@ public final class RecipeEditsApplier {
                 // parses in the mod codecs, so the only representable "this input is gone" is
                 // absence. Applied after the writes, from the back, because removing shifts
                 // the indices of the elements still to remove.
+                //
+                // Only an element a repeatable (%d) pattern named may be removed. A fixed
+                // array element has no empty form at all - the write below would be
+                // {{"item":"minecraft:air","count":0}}, which the loader refuses - and
+                // removing it would shrink a list the mod may require: Create's
+                // create:item_application page draws two inputs and
+                // ItemApplicationRecipe.getRequiredHeldItem() throws
+                // "Item Application Recipe has no tool!" as soon as the decoded list holds
+                // fewer than two, which takes JEI's whole recipe area down with it. Such a
+                // patch is refused instead.
                 String[] element = arrayElementOf(declaredField);
-                if (element != null) {
+                if (element != null && adapter.isRepeatField(declaredField)) {
                     removals.add(new int[]{Integer.parseInt(element[1])});
                     removalParents.add(element[0]);
                     continue;
@@ -1421,6 +1471,11 @@ public final class RecipeEditsApplier {
                 return Optional.empty();
             }
             DerivedSlot target = slots.get(ordinal);
+            if (target.paths().isEmpty()) {
+                // The sequence draws this slot but names no field for it: a patch there is
+                // refused instead of being written somewhere nearby.
+                return Optional.empty();
+            }
             IngredientKind kind = SlotPatchFields.kindOf(patch.fields(), slot.key());
             if (kind == null || kind != target.kind()) {
                 // The kind of the field the sequence resolved to, not of a declared
@@ -1716,7 +1771,7 @@ public final class RecipeEditsApplier {
         if (id == null || id.isEmpty() || !kind.acceptsAmount(amount) || !validIngredientId(kind, id)) {
             return Optional.empty();
         }
-        return Optional.of(ModdedRecipeAdapters.valueElement(style, id, amount));
+        return Optional.of(ModdedRecipeAdapters.valueElement(style, kind, id, amount));
     }
 
     private static String primitive(JsonObject json, String key) {

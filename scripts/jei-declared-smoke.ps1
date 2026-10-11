@@ -990,8 +990,9 @@ $cases = @(
     },
     # Horse Powered's press writes a plain item pair, so this pins that the declaration
     # added for the page (MiscRecipeDeclarations) lines up with the shipped file: the input
-    # is rewritten, the result and the untouched keys survive. The same serializer's fluid
-    # shape (fluidResult + inputCount) is deliberately not declared.
+    # is rewritten, the result and the untouched keys survive. The same page's fluid shape
+    # is the second case below, because the category adds one OUTPUT slot in either branch
+    # and which field that slot holds is the recipe's business.
     @{
         Name = 'horsepowered:pressing'
         RecipeId = 'horsepowered:pressing/allium_to_dye'
@@ -1022,6 +1023,638 @@ $cases = @(
             'fluidResult.amount' = 500
         }
         Absent = @('result', 'ingredient.tag')
+    },
+    # Immersive Engineering's squeezer draws an item OUTPUT slot unconditionally but
+    # leaves it empty on its 5 fluid recipes, so those pages draw two output slots and
+    # the declaration names both by ordinal: 0 is "result" (empty there), 1 is "fluid".
+    # data/immersiveengineering/recipe/squeezer/melon_seeds.json is
+    #   {"type":"immersiveengineering:squeezer","energy":6400,
+    #    "fluid":{"amount":20,"id":"immersiveengineering:plantoil"},
+    #    "input":{"item":"minecraft:melon_seeds"}}
+    # and .../graphite_dust.json carries "result" instead, which is the one-output shape
+    # where ordinal 0 is that item. The two cases below pin both: the fluid one writes
+    # "fluid" and leaves "result" absent, the item one does the reverse, and the
+    # undeclared "energy" survives in both.
+    @{
+        Name = 'immersiveengineering:squeezer (fluid shape)'
+        RecipeId = 'immersiveengineering:squeezer/melon_seeds'
+        Serializer = 'immersiveengineering:squeezer'
+        RecipePath = 'data\immersiveengineering\recipe\squeezer\melon_seeds.json'
+        Fields = '{"input.0.item":"minecraft:pumpkin_seeds","input.0.count":"1","output.1.fluid":"immersiveengineering:plantoil","output.1.fluid_amount":"40"}'
+        Expect = @{
+            'type' = 'immersiveengineering:squeezer'
+            'energy' = 6400
+            'input.item' = 'minecraft:pumpkin_seeds'
+            'fluid.id' = 'immersiveengineering:plantoil'
+            'fluid.amount' = 40
+        }
+        Absent = @('result', 'input.tag', 'input.basePredicate')
+    },
+    @{
+        Name = 'immersiveengineering:squeezer (item shape)'
+        RecipeId = 'immersiveengineering:squeezer/graphite_dust'
+        Serializer = 'immersiveengineering:squeezer'
+        RecipePath = 'data\immersiveengineering\recipe\squeezer\graphite_dust.json'
+        Fields = '{"input.0.item":"minecraft:coal","input.0.count":"1","output.item":"immersiveengineering:dust_hop_graphite","output.count":"2"}'
+        Expect = @{
+            'type' = 'immersiveengineering:squeezer'
+            'energy' = 19200
+            'input.item' = 'minecraft:coal'
+            'input.count' = 1
+            'result.id' = 'immersiveengineering:dust_hop_graphite'
+            'result.count' = 2
+        }
+        Absent = @('fluid', 'input.tag', 'input.basePredicate')
+    },
+    # The same shape one page over: the fermenter always writes "fluid", and honey.json
+    # is the only recipe that also fills the always-created item OUTPUT slot, so it is
+    # the one whose two outputs are both non-empty. Its case below pins that both
+    # ordinals resolve to their own field in one patch.
+    @{
+        Name = 'immersiveengineering:fermenter (fluid shape)'
+        RecipeId = 'immersiveengineering:fermenter/potato'
+        Serializer = 'immersiveengineering:fermenter'
+        RecipePath = 'data\immersiveengineering\recipe\fermenter\potato.json'
+        Fields = '{"input.0.item":"minecraft:baked_potato","input.0.count":"1","output.1.fluid":"immersiveengineering:ethanol","output.1.fluid_amount":"160"}'
+        Expect = @{
+            'type' = 'immersiveengineering:fermenter'
+            'energy' = 6400
+            'input.item' = 'minecraft:baked_potato'
+            'fluid.id' = 'immersiveengineering:ethanol'
+            'fluid.amount' = 160
+        }
+        Absent = @('result', 'input.tag')
+    },
+    @{
+        Name = 'immersiveengineering:fermenter (two outputs)'
+        RecipeId = 'immersiveengineering:fermenter/honey'
+        Serializer = 'immersiveengineering:fermenter'
+        RecipePath = 'data\immersiveengineering\recipe\fermenter\honey.json'
+        Fields = '{"input.0.item":"minecraft:honey_block","input.0.count":"1","output.0.item":"minecraft:glass_bottle","output.0.count":"1","output.1.fluid":"immersiveengineering:ethanol","output.1.fluid_amount":"300"}'
+        Expect = @{
+            'type' = 'immersiveengineering:fermenter'
+            'energy' = 6400
+            'input.item' = 'minecraft:honey_block'
+            'input.count' = 1
+            'result.id' = 'minecraft:glass_bottle'
+            'result.count' = 1
+            'fluid.id' = 'immersiveengineering:ethanol'
+            'fluid.amount' = 300
+        }
+        Absent = @('input.tag')
+    },
+    # Two fluid tags, because a fluid tag is not an item tag with a different key. The
+    # item case further down writes the tag alone, which is the shape every mod's plain
+    # Ingredient reads; a fluid tag is a *sized* fluid ingredient, so the amount is part
+    # of the value and omitting it does not fail - SizedFluidIngredient.FLAT_CODEC reads
+    # "amount" with the bucket volume as its default, so a recipe that consumed 12 mB
+    # would silently consume 1000. And Create's fluid ingredient dispatches on an
+    # explicit type name whose single-fluid value (neoforge:single) does not accept a
+    # tag: the shipped files write neoforge:tag. Both cases below are on pages whose
+    # fluid field really is a SizedFluidIngredient.
+    # data/immersiveengineering/recipe/refinery/biodiesel.json is
+    #   {"type":"immersiveengineering:refinery","catalyst":{"tag":"c:dusts/saltpeter"},
+    #    "energy":80,"input0":{"amount":8,"tag":"c:plantoil"},
+    #    "input1":{"amount":8,"tag":"c:ethanol"},
+    #    "result":{"amount":16,"id":"immersiveengineering:biodiesel"}}
+    # - the same page as the fluid-id case above, on a recipe that case does not use.
+    @{
+        Name = 'immersiveengineering:refinery (fluid tag input)'
+        RecipeId = 'immersiveengineering:refinery/biodiesel'
+        Serializer = 'immersiveengineering:refinery'
+        RecipePath = 'data\immersiveengineering\recipe\refinery\biodiesel.json'
+        Fields = '{"input.0.fluid":"#minecraft:water","input.0.fluid_amount":"20"}'
+        Expect = @{
+            'type' = 'immersiveengineering:refinery'
+            'energy' = 80
+            'catalyst.tag' = 'c:dusts/saltpeter'
+            'input0.tag' = 'minecraft:water'
+            'input0.amount' = 20
+            'input1.tag' = 'c:ethanol'
+            'input1.amount' = 8
+            'result.id' = 'immersiveengineering:biodiesel'
+        }
+        Absent = @('input0.fluid', 'input0.id')
+    },
+    # data/create/recipe/mixing/chocolate.json is
+    #   {"type":"create:mixing","heat_requirement":"heated",
+    #    "ingredients":[{"item":"minecraft:sugar"},{"item":"minecraft:cocoa_beans"},
+    #                   {"type":"neoforge:tag","amount":250,"tag":"c:milk"}],
+    #    "results":[{"amount":250,"id":"create:chocolate"}]}
+    # - the two item ingredients condense to two slots, so input.2 is the fluid one.
+    @{
+        Name = 'create:mixing (fluid tag input, typed)'
+        RecipeId = 'create:mixing/chocolate'
+        Serializer = 'create:mixing'
+        RecipePath = 'data\create\recipe\mixing\chocolate.json'
+        Fields = '{"input.2.fluid":"#minecraft:water","input.2.fluid_amount":"250"}'
+        Expect = @{
+            'type' = 'create:mixing'
+            'heat_requirement' = 'heated'
+            'ingredients.0.item' = 'minecraft:sugar'
+            'ingredients.1.item' = 'minecraft:cocoa_beans'
+            'ingredients.2.type' = 'neoforge:tag'
+            'ingredients.2.tag' = 'minecraft:water'
+            'ingredients.2.amount' = 250
+            'results.0.id' = 'create:chocolate'
+        }
+        Absent = @('ingredients.2.fluid')
+    },
+    # Silent Gear's alloy pages. Its JEI plugin pushes the bare recipe objects instead
+    # of RecipeHolders, so the client resolves the displayed object to the manager's
+    # recipe by identity before it models the page; the id it finds is the file below.
+    # The ingredient array length is the page's input count, and the result is written
+    # in the mod's own result shape, {"item":…,"count":…} - not the "id" form the other
+    # declared pages use - which is what this case pins.
+    # data/silentgear/recipe/alloying/metal/azure_electrum_ingot.json is
+    #   {"type":"silentgear:alloy_making/metal",
+    #    "ingredients":[{"tag":"c:storage_blocks/azure_silver"},{"tag":"c:ingots/gold"},
+    #                   {"tag":"c:ingots/gold"},{"tag":"c:ender_pearls"}],
+    #    "result":{"count":3,"item":"silentgear:azure_electrum_ingot"}}
+    @{
+        Name = 'silentgear:alloy_making/metal (ingredients.%d, item-shaped result)'
+        RecipeId = 'silentgear:alloying/metal/azure_electrum_ingot'
+        Serializer = 'silentgear:alloy_making/metal'
+        RecipePath = 'data\silentgear\recipe\alloying\metal\azure_electrum_ingot.json'
+        Fields = '{"input.0.item":"minecraft:gold_block","input.0.count":"1","output.item":"silentgear:blaze_gold_ingot","output.count":"2"}'
+        Expect = @{
+            'type' = 'silentgear:alloy_making/metal'
+            'ingredients.0.item' = 'minecraft:gold_block'
+            'ingredients.1.tag' = 'c:ingots/gold'
+            'ingredients.2.tag' = 'c:ingots/gold'
+            'ingredients.3.tag' = 'c:ender_pearls'
+            'result.item' = 'silentgear:blaze_gold_ingot'
+            'result.count' = 2
+        }
+        Absent = @('ingredients.0.tag', 'result.id')
+    },
+    # data/silentgear/recipe/azure_electrum_dust.json is
+    #   {"type":"silentgear:tool_action","damage_to_tool":1,
+    #    "ingredient":{"tag":"c:ingots/azure_electrum"},
+    #    "result":{"count":1,"id":"silentgear:azure_electrum_dust"},
+    #    "sound":{"pitch":1.0,"pitch_deviation":0.1,
+    #             "sound":"silentgear:block.silentgear.stone_anvil.hammer","volume":1.0},
+    #    "tool":{"tag":"c:tools/hammer"}}
+    # The category adds INPUT(tool) before INPUT(ingredient), so input.0 is the tool and
+    # input.1 the item being worked; "damage_to_tool" and "sound" are undeclared keys
+    # that must survive.
+    @{
+        Name = 'silentgear:tool_action (tool then ingredient)'
+        RecipeId = 'silentgear:azure_electrum_dust'
+        Serializer = 'silentgear:tool_action'
+        RecipePath = 'data\silentgear\recipe\azure_electrum_dust.json'
+        Fields = '{"input.0.item":"minecraft:iron_ingot","input.0.count":"1","input.1.item":"minecraft:gold_ingot","input.1.count":"1","output.item":"minecraft:redstone","output.count":"4"}'
+        Expect = @{
+            'type' = 'silentgear:tool_action'
+            'damage_to_tool' = 1
+            'tool.item' = 'minecraft:iron_ingot'
+            'ingredient.item' = 'minecraft:gold_ingot'
+            'result.id' = 'minecraft:redstone'
+            'result.count' = 4
+            'sound.sound' = 'silentgear:block.silentgear.stone_anvil.hammer'
+        }
+        Absent = @('tool.tag', 'ingredient.tag')
+    },
+    # The gear_crafting page displays two recipe types (70 files of
+    # silentgear:gear_crafting plus 43 of silentgear:compound_part = the page's 113), and
+    # the ingredient entries are Silent Gear's own ingredient types, registered through
+    # NeoForge's IngredientType dispatch, so their codec falls back to the vanilla
+    # single/tag form and the declared item shape decodes. This case edits two entries of
+    # one recipe and leaves the middle one - a {"type":"silentgear:part_type"} entry -
+    # verbatim, which is what its own Absent/Expect pair pins.
+    # data/silentgear/recipe/gear/arrow.json is
+    #   {"type":"silentgear:gear_crafting","category":"equipment",
+    #    "ingredients":[{"item":"silentgear:arrow_heads"},
+    #                   {"type":"silentgear:part_type","part_type":"silentgear:rod"},
+    #                   {"type":"silentgear:part_type","part_type":"silentgear:fletching"}],
+    #    "result":{"count":1,"id":"silentgear:arrow"}}
+    @{
+        Name = 'silentgear:gear_crafting (a custom ingredient type survives)'
+        RecipeId = 'silentgear:gear/arrow'
+        Serializer = 'silentgear:gear_crafting'
+        RecipePath = 'data\silentgear\recipe\gear\arrow.json'
+        Fields = '{"input.0.item":"minecraft:flint","input.0.count":"1","input.2.item":"minecraft:feather","input.2.count":"1"}'
+        Expect = @{
+            'type' = 'silentgear:gear_crafting'
+            'category' = 'equipment'
+            'ingredients.0.item' = 'minecraft:flint'
+            'ingredients.1.type' = 'silentgear:part_type'
+            'ingredients.1.part_type' = 'silentgear:rod'
+            'ingredients.2.item' = 'minecraft:feather'
+            'result.id' = 'silentgear:arrow'
+            'result.count' = 1
+        }
+        Absent = @('ingredients.0.type', 'ingredients.2.part_type')
+    },
+    # data/silentgear/recipe/gear/arrow_head.json is the other type of the same page:
+    #   {"type":"silentgear:compound_part","category":"equipment",
+    #    "ingredients":[{"type":"silentgear:blueprint","gear_type":"silentgear:arrow",
+    #                    "part_type":"silentgear:main"},
+    #                   {"type":"silentgear:material","gear_type":"silentgear:arrow",
+    #                    "part_type":"silentgear:main"}],
+    #    "result":{"count":1,"id":"silentgear:arrow_heads"}}
+    @{
+        Name = 'silentgear:compound_part (blueprint slot narrowed to an item)'
+        RecipeId = 'silentgear:gear/arrow_head'
+        Serializer = 'silentgear:compound_part'
+        RecipePath = 'data\silentgear\recipe\gear\arrow_head.json'
+        Fields = '{"input.0.item":"minecraft:paper","input.0.count":"1"}'
+        Expect = @{
+            'type' = 'silentgear:compound_part'
+            'category' = 'equipment'
+            'ingredients.0.item' = 'minecraft:paper'
+            'ingredients.1.type' = 'silentgear:material'
+            'ingredients.1.gear_type' = 'silentgear:arrow'
+            'result.id' = 'silentgear:arrow_heads'
+        }
+        Absent = @('ingredients.0.type', 'ingredients.0.part_type')
+    },
+    # The salvaging page draws three recipe types; two of them are declared. The plain
+    # "salvaging" one has an ingredient and a results array, one output slot per entry.
+    # data/silentgear/recipe/salvaging/bow.json is
+    #   {"type":"silentgear:salvaging","ingredient":{"item":"minecraft:bow"},
+    #    "results":[{"count":3,"id":"minecraft:string"},{"count":3,"id":"minecraft:stick"}]}
+    # so this patch rewrites the input and the FIRST result while the second keeps both of
+    # its keys.
+    @{
+        Name = 'silentgear:salvaging (results.%d)'
+        RecipeId = 'silentgear:salvaging/bow'
+        Serializer = 'silentgear:salvaging'
+        RecipePath = 'data\silentgear\recipe\salvaging\bow.json'
+        Fields = '{"input.0.item":"minecraft:crossbow","input.0.count":"1","output.0.item":"minecraft:flint","output.0.count":"2"}'
+        Expect = @{
+            'type' = 'silentgear:salvaging'
+            'ingredient.item' = 'minecraft:crossbow'
+            'results.0.id' = 'minecraft:flint'
+            'results.0.count' = 2
+            'results.1.id' = 'minecraft:stick'
+            'results.1.count' = 3
+        }
+        Absent = @('ingredient.tag', 'results.0.tag')
+    },
+    # data/silentgear/recipe/salvaging/gear/axe.json is
+    #   {"type":"silentgear:salvaging/gear","ingredient":{"item":"silentgear:axe"}}
+    # - the type whose page draws ONE slot and no output at all
+    # (GearSalvagingRecipe.getPossibleResultsForDisplay() is an empty list), so it is
+    # declared through SilentGearSlotSequences.SalvageGear and this patch carries no
+    # output key at all.
+    @{
+        Name = 'silentgear:salvaging/gear (input only, no output slot)'
+        RecipeId = 'silentgear:salvaging/gear/axe'
+        Serializer = 'silentgear:salvaging/gear'
+        RecipePath = 'data\silentgear\recipe\salvaging\gear\axe.json'
+        Fields = '{"input.0.item":"minecraft:diamond_axe","input.0.count":"1"}'
+        Expect = @{
+            'type' = 'silentgear:salvaging/gear'
+            'ingredient.item' = 'minecraft:diamond_axe'
+        }
+        Absent = @('ingredient.tag', 'results')
+    },
+    # The other half of the clear rule: an element a repeatable pattern named IS removed by
+    # the clear gesture, which is how a variable-arity list shrinks. The blueprint page's
+    # inputs are "inputs.%d", so clearing input.2 of this three-input recipe drops the last
+    # entry and leaves the two before it untouched.
+    # data/immersiveengineering/recipe/blueprint/bullet_explosive.json is
+    #   {"type":"immersiveengineering:blueprint","category":"specialBullet",
+    #    "inputs":[{"basePredicate":{"item":"immersiveengineering:empty_casing"},"count":4},
+    #               {"tag":"c:gunpowders"},{"item":"minecraft:tnt"}],
+    #    "result":{"count":4,"id":"immersiveengineering:bullet_he"}}
+    @{
+        Name = 'immersiveengineering:blueprint (a cleared repeat element is removed)'
+        RecipeId = 'immersiveengineering:blueprint/bullet_explosive'
+        Serializer = 'immersiveengineering:blueprint'
+        RecipePath = 'data\immersiveengineering\recipe\blueprint\bullet_explosive.json'
+        Fields = '{"input.2.item":"minecraft:air","input.2.count":"0"}'
+        Expect = @{
+            'type' = 'immersiveengineering:blueprint'
+            'category' = 'specialBullet'
+            'inputs.0.basePredicate.item' = 'immersiveengineering:empty_casing'
+            'inputs.0.count' = 4
+            'inputs.1.tag' = 'c:gunpowders'
+            'result.id' = 'immersiveengineering:bullet_he'
+        }
+        Absent = @('inputs.2.item', 'inputs.2.tag')
+    },
+    # data/mekanism/recipe/energy_conversion/redstone.json is
+    #   {"type":"mekanism:energy_conversion","input":{"count":1,"tag":"c:dusts/redstone"},
+    #    "output":10000}
+    # The page draws one slot and shows the energy as text beside it, so the declaration
+    # has no output field at all (SingleItemInputSequence is the form for that) and the
+    # bare "output" amount must survive the edit untouched.
+    @{
+        Name = 'mekanism:energy_conversion (input only, energy survives)'
+        RecipeId = 'mekanism:energy_conversion/redstone'
+        Serializer = 'mekanism:energy_conversion'
+        RecipePath = 'data\mekanism\recipe\energy_conversion\redstone.json'
+        Fields = '{"input.0.item":"minecraft:redstone","input.0.count":"1"}'
+        Expect = @{
+            'type' = 'mekanism:energy_conversion'
+            'input.item' = 'minecraft:redstone'
+            'input.count' = 1
+            'output' = 10000
+        }
+        Absent = @('input.tag')
+    },
+    # Create's spout page is declared through CreateSpoutSlotSequence: the item entry and
+    # the fluid entry can sit at any index of the "ingredients" array, so the sequence
+    # resolves each slot's path by the entry's own kind (a fluid entry is one whose "type"
+    # names a registered fluid ingredient type) and cross-checks the item half against the
+    # Ingredient objects the mod parsed.
+    # data/create/recipe/filling/compat/immersiveengineering/treated_wood_in_spout.json is
+    #   {"neoforge:conditions":[{"type":"neoforge:mod_loaded","modid":"immersiveengineering"}],
+    #    "type":"create:filling",
+    #    "ingredients":[{"tag":"minecraft:planks"},
+    #                   {"type":"neoforge:tag","amount":125,"tag":"c:creosote"}],
+    #    "results":[{"id":"immersiveengineering:treated_wood_horizontal"}]}
+    # The fluid is rewritten in Create's sized shape (which needs its explicit "type"), the
+    # item entry loses its tag, and the condition survives (that copy is the E14 fix).
+    @{
+        Name = 'create:filling (item + fluid by shape, condition survives)'
+        RecipeId = 'create:filling/compat/immersiveengineering/treated_wood_in_spout'
+        Serializer = 'create:filling'
+        RecipePath = 'data\create\recipe\filling\compat\immersiveengineering\treated_wood_in_spout.json'
+        Fields = '{"input.0.item":"minecraft:oak_planks","input.0.count":"1","input.1.fluid":"minecraft:water","input.1.fluid_amount":"250","output.item":"minecraft:stripped_oak_log","output.count":"1"}'
+        Expect = @{
+            'type' = 'create:filling'
+            'ingredients.0.item' = 'minecraft:oak_planks'
+            'ingredients.1.type' = 'neoforge:single'
+            'ingredients.1.fluid' = 'minecraft:water'
+            'ingredients.1.amount' = 250
+            'results.0.id' = 'minecraft:stripped_oak_log'
+            'results.0.count' = 1
+            'neoforge:conditions.0.modid' = 'immersiveengineering'
+        }
+        Absent = @('ingredients.0.tag', 'ingredients.1.tag')
+    },
+    # Cobblemon's campfire pot page. Its shapeless type is declared through
+    # CobblemonCampfirePotSlotSequence because the page draws one INPUT slot per ingredient
+    # entry and then one PREVIEW slot per matching example seasoning - and those previews
+    # have no field of their own (the recipe names processors and a tag, not the seasonings).
+    # A field list would name them too, and a drop there would append an ingredient.
+    # data/cobblemon/recipe/campfire_pot/antidote_in_campfire_pot.json is
+    #   {"type":"cobblemon:cooking_pot_shapeless","category":"medicines",
+    #    "ingredients":[{"item":"minecraft:glass_bottle"},{"item":"cobblemon:pecha_berry"}],
+    #    "result":{"id":"cobblemon:antidote"},"seasoningProcessors":[],
+    #    "seasoningTag":"cobblemon:empty"}
+    @{
+        Name = 'cobblemon:campfire_pot_recipe (ingredients by sequence)'
+        RecipeId = 'cobblemon:campfire_pot/antidote_in_campfire_pot'
+        Serializer = 'cobblemon:cooking_pot_shapeless'
+        RecipePath = 'data\cobblemon\recipe\campfire_pot\antidote_in_campfire_pot.json'
+        Fields = '{"input.0.item":"minecraft:bucket","input.0.count":"1","output.item":"minecraft:potion","output.count":"1"}'
+        Expect = @{
+            'type' = 'cobblemon:cooking_pot_shapeless'
+            'category' = 'medicines'
+            'ingredients.0.item' = 'minecraft:bucket'
+            'ingredients.1.item' = 'cobblemon:pecha_berry'
+            'result.id' = 'minecraft:potion'
+            'result.count' = 1
+            'seasoningTag' = 'cobblemon:empty'
+        }
+        Absent = @('ingredients.0.tag')
+    },
+    # Create's mechanical crafting page. The category draws a dense grid of INPUT slots
+    # over the pattern's cells - one slot per cell in reading order, blanks included - so
+    # the k-th slot is the k-th cell of the flattened pattern. The JSON names ingredients
+    # per pattern CHARACTER ("key.<letter>"), and a blank cell has no field at all: the
+    # sequence declares no path for it and a patch addressed to it is refused (the probe
+    # below proves that). Two cells carrying the same letter resolve to the same field -
+    # that is the recipe's own structure - and this case pins it on wand_of_symmetry's "G",
+    # whose three cells are ordinals 1, 3 and 5 of the 3x5 pattern below, so this patch on
+    # input.1 also rewrites the cells at input.3 and input.5.
+    # data/create/recipe/mechanical_crafting/wand_of_symmetry.json is
+    #   {"type":"create:mechanical_crafting","accept_mirrored":true,"category":"misc",
+    #    "key":{"B":{"tag":"c:ingots/brass"},"E":{"tag":"c:ender_pearls"},
+    #           "G":{"tag":"c:glass_blocks"},"O":{"tag":"c:obsidians"},
+    #           "P":{"item":"create:precision_mechanism"}},
+    #    "pattern":[" G ","GEG"," P "," B "," O "],
+    #    "result":{"count":1,"id":"create:wand_of_symmetry"}}
+    @{
+        Name = 'create:mechanical_crafting (a shared key letter) [input.1 = letter G]'
+        RecipeId = 'create:mechanical_crafting/wand_of_symmetry'
+        Serializer = 'create:mechanical_crafting'
+        RecipePath = 'data\create\recipe\mechanical_crafting\wand_of_symmetry.json'
+        Fields = '{"input.1.item":"minecraft:iron_ingot","input.1.count":"1"}'
+        Expect = @{
+            'type' = 'create:mechanical_crafting'
+            'accept_mirrored' = $true
+            'category' = 'misc'
+            'key.G.item' = 'minecraft:iron_ingot'
+            'key.E.tag' = 'c:ender_pearls'
+            'key.O.tag' = 'c:obsidians'
+            'key.B.tag' = 'c:ingots/brass'
+            'key.P.item' = 'create:precision_mechanism'
+            'result.id' = 'create:wand_of_symmetry'
+            'result.count' = 1
+        }
+        Absent = @('key.G.tag')
+    },
+    # Create's sequenced assembly page. Its slots follow the recipe's "sequence" steps, so
+    # every input sits at a per-step path rather than at a positionally computable field:
+    # ordinal 0 is the base "ingredient", and each step adds one only if its JEI
+    # sub-category draws one - "create:deploying" draws the step's SECOND item entry (the
+    # item the deployer holds; item[0] is the incomplete item the step works on) and
+    # "create:filling" draws its first fluid entry, while "create:pressing" and
+    # "create:cutting" draw none at all. That is CreateSequencedAssemblySlotSequence's
+    # derivation; the client reported the resulting shapes as 4 / 3 / 2 inputs over these
+    # three files.
+    # data/create/recipe/sequenced_assembly/precision_mechanism.json is
+    #   {"type":"create:sequenced_assembly","ingredient":{"tag":"c:plates/gold"},"loops":5,
+    #    "transitional_item":{"id":"create:incomplete_precision_mechanism"},
+    #    "results":[{"chance":120.0,"id":"create:precision_mechanism"},
+    #               {"chance":8.0,"id":"create:golden_sheet"}, …],
+    #    "sequence":[{"type":"create:deploying","ingredients":[
+    #                    {"item":"create:incomplete_precision_mechanism"},
+    #                    {"item":"create:cogwheel"}],"results":[…]},
+    #                {…"create:large_cogwheel"…}, {…"tag":"c:nuggets/iron"…}]}
+    # input.1 is the first step's held item. The written output replaces results.0
+    # wholesale - the accepted limitation of every declared Create "results" entry (see
+    # CreateRecipeDeclarations' class comment) - which the Absent list pins here, while the
+    # sibling entry keeps both its id and its chance.
+    @{
+        Name = 'create:sequenced_assembly (a deploying step writes its held item and the output)'
+        RecipeId = 'create:sequenced_assembly/precision_mechanism'
+        Serializer = 'create:sequenced_assembly'
+        RecipePath = 'data\create\recipe\sequenced_assembly\precision_mechanism.json'
+        Fields = '{"input.1.item":"minecraft:iron_ingot","input.1.count":"1","output.item":"minecraft:gold_block","output.count":"1"}'
+        Expect = @{
+            'type' = 'create:sequenced_assembly'
+            'ingredient.tag' = 'c:plates/gold'
+            'loops' = 5
+            'transitional_item.id' = 'create:incomplete_precision_mechanism'
+            'sequence.0.ingredients.0.item' = 'create:incomplete_precision_mechanism'
+            'sequence.0.ingredients.1.item' = 'minecraft:iron_ingot'
+            'sequence.1.ingredients.1.item' = 'create:large_cogwheel'
+            'sequence.2.ingredients.1.tag' = 'c:nuggets/iron'
+            'results.0.id' = 'minecraft:gold_block'
+            'results.1.id' = 'create:golden_sheet'
+            'results.1.chance' = 8.0
+        }
+        Absent = @('results.0.chance')
+    },
+    # A filling step's slot is the fluid entry of its own "ingredients" array, and the mod's
+    # fluid ingredient codec rejects a bare {"fluid":…,"amount":…} - the "type" is required -
+    # so the declaration writes this page with ModdedJsonStyle.TYPED_FLUID and a written node
+    # replaces the entry wholesale. This case is what pins that: the type is still there
+    # afterwards, next to the new id and amount.
+    # data/create/recipe/sequenced_assembly/sturdy_sheet.json is
+    #   {"type":"create:sequenced_assembly","ingredient":{"tag":"c:dusts/obsidian"},
+    #    "transitional_item":{"id":"create:unprocessed_obsidian_sheet"},
+    #    "results":[{"id":"create:sturdy_sheet"}],
+    #    "sequence":[{"type":"create:filling","ingredients":[
+    #                    {"item":"create:unprocessed_obsidian_sheet"},
+    #                    {"amount":500,"fluid":"minecraft:lava","type":"neoforge:single"}],
+    #                  "results":[…]},
+    #                {"type":"create:pressing",…},{"type":"create:pressing",…}]}
+    @{
+        Name = 'create:sequenced_assembly (a filling step writes its fluid)'
+        RecipeId = 'create:sequenced_assembly/sturdy_sheet'
+        Serializer = 'create:sequenced_assembly'
+        RecipePath = 'data\create\recipe\sequenced_assembly\sturdy_sheet.json'
+        Fields = '{"input.1.fluid":"minecraft:water","input.1.fluid_amount":"1000"}'
+        Expect = @{
+            'type' = 'create:sequenced_assembly'
+            'ingredient.tag' = 'c:dusts/obsidian'
+            'transitional_item.id' = 'create:unprocessed_obsidian_sheet'
+            'sequence.0.ingredients.0.item' = 'create:unprocessed_obsidian_sheet'
+            'sequence.0.ingredients.1.fluid' = 'minecraft:water'
+            'sequence.0.ingredients.1.amount' = 1000
+            'sequence.0.ingredients.1.type' = 'neoforge:single'
+            'sequence.1.type' = 'create:pressing'
+            'results.0.id' = 'create:sturdy_sheet'
+        }
+    },
+    # Immersive Engineering's cloche is declared with a recipe-derived slot sequence
+    # (ImmersiveEngineeringSlotSequences.Cloche), so this case pins the two things a
+    # field list could not do. The page's two inputs are the seed and the fluid the
+    # cloche consumes; the fluid is a plain FluidIngredient whose JSON key is "fluid"
+    # (an id string), not the "id" a FluidStack uses - and the file below is one of the
+    # 38 that omit it entirely, so its "fluid" key is created by the write.
+    # data/immersiveengineering/recipe/cloche/wheat.json is
+    #   {"type":"immersiveengineering:cloche","input":{"item":"minecraft:wheat_seeds"},
+    #    "render":{"type":"immersiveengineering:crop","block":"minecraft:wheat"},
+    #    "results":[{"count":2,"id":"minecraft:wheat"},
+    #               {"chance":0.25,"output":{"id":"minecraft:wheat_seeds"}}],
+    #    "soil":{"item":"minecraft:dirt"},"time":640}
+    # The second output is the chance-wrapped shape: the edit has to land in its nested
+    # "output" object, so "chance" (and any "conditions") survives and no sibling "id"
+    # appears next to it. The soil and render blocks are CATALYST / undeclared keys.
+    @{
+        Name = 'immersiveengineering:cloche (nested chance output)'
+        RecipeId = 'immersiveengineering:cloche/wheat'
+        Serializer = 'immersiveengineering:cloche'
+        RecipePath = 'data\immersiveengineering\recipe\cloche\wheat.json'
+        Fields = '{"input.0.item":"minecraft:pumpkin_seeds","input.0.count":"1","input.1.fluid":"minecraft:water","input.1.fluid_amount":"1000","output.0.item":"minecraft:bread","output.0.count":"3","output.1.item":"minecraft:wheat_seeds","output.1.count":"1"}'
+        Expect = @{
+            'type' = 'immersiveengineering:cloche'
+            'time' = 640
+            'input.item' = 'minecraft:pumpkin_seeds'
+            'fluid.fluid' = 'minecraft:water'
+            'fluid.amount' = 1000
+            'results.0.id' = 'minecraft:bread'
+            'results.0.count' = 3
+            'results.1.output.id' = 'minecraft:wheat_seeds'
+            'results.1.output.count' = 1
+            'results.1.chance' = 0.25
+            'soil.item' = 'minecraft:dirt'
+            'render.type' = 'immersiveengineering:crop'
+        }
+        Absent = @('results.1.id', 'results.1.output.tag')
+    },
+    # The bottling machine's item input is spelled "input" on this file and "inputs" on
+    # the next one, which is why the page needed a sequence: the two cases pin that both
+    # spellings resolve to the same page shape (one item slot plus the fluid, then one
+    # output slot here and two there). The fluid is a SizedFluidIngredient, so its
+    # written node carries the amount beside the id - and the file's own "tag" form is
+    # replaced by the id form, exactly like every other declared IE fluid input.
+    # data/immersiveengineering/recipe/bottling/black_concrete_powder.json is
+    #   {"type":"immersiveengineering:bottling_machine",
+    #    "fluid":{"amount":125,"tag":"minecraft:water"},
+    #    "input":{"item":"minecraft:black_concrete_powder"},
+    #    "results":[{"id":"minecraft:black_concrete"}]}
+    @{
+        Name = 'immersiveengineering:bottling_machine (input, single item)'
+        RecipeId = 'immersiveengineering:bottling/black_concrete_powder'
+        Serializer = 'immersiveengineering:bottling_machine'
+        RecipePath = 'data\immersiveengineering\recipe\bottling\black_concrete_powder.json'
+        Fields = '{"input.0.item":"minecraft:white_concrete_powder","input.0.count":"1","input.1.fluid":"minecraft:water","input.1.fluid_amount":"125","output.item":"minecraft:white_concrete","output.count":"1"}'
+        Expect = @{
+            'type' = 'immersiveengineering:bottling_machine'
+            'input.item' = 'minecraft:white_concrete_powder'
+            'input.count' = 1
+            'fluid.fluid' = 'minecraft:water'
+            'fluid.amount' = 125
+            'results.0.id' = 'minecraft:white_concrete'
+            'results.0.count' = 1
+        }
+        Absent = @('fluid.tag', 'input.tag', 'input.basePredicate')
+    },
+    # data/immersiveengineering/recipe/bottling/empty_shell.json is
+    #   {"type":"immersiveengineering:bottling_machine",
+    #    "fluid":{"amount":250,"tag":"c:phenolic_resin"},
+    #    "inputs":[{"item":"immersiveengineering:mold_bullet_casing"},
+    #              {"basePredicate":{"tag":"c:nuggets/copper"},"count":3}],
+    #    "results":[{"count":2,"id":"immersiveengineering:empty_shell"},
+    #               {"id":"immersiveengineering:mold_bullet_casing"}]}
+    # - three input slots (two items and the fluid, in that order) and two outputs, so
+    # input.2 is the fluid and the ordinals after it are the results. The rewritten
+    # second item keeps its count and loses the tag it was written as.
+    @{
+        Name = 'immersiveengineering:bottling_machine (inputs array, 2 items)'
+        RecipeId = 'immersiveengineering:bottling/empty_shell'
+        Serializer = 'immersiveengineering:bottling_machine'
+        RecipePath = 'data\immersiveengineering\recipe\bottling\empty_shell.json'
+        Fields = '{"input.0.item":"minecraft:iron_ingot","input.0.count":"1","input.1.item":"minecraft:copper_ingot","input.1.count":"3","input.2.fluid":"minecraft:water","input.2.fluid_amount":"250","output.0.item":"minecraft:arrow","output.0.count":"2","output.1.item":"immersiveengineering:mold_bullet_casing","output.1.count":"1"}'
+        Expect = @{
+            'type' = 'immersiveengineering:bottling_machine'
+            'inputs.0.item' = 'minecraft:iron_ingot'
+            'inputs.0.count' = 1
+            'inputs.1.item' = 'minecraft:copper_ingot'
+            'inputs.1.count' = 3
+            'fluid.fluid' = 'minecraft:water'
+            'fluid.amount' = 250
+            'results.0.id' = 'minecraft:arrow'
+            'results.0.count' = 2
+            'results.1.id' = 'immersiveengineering:mold_bullet_casing'
+            'results.1.count' = 1
+        }
+        Absent = @('inputs.1.basePredicate', 'fluid.tag')
+    },
+    # The two pages with no output slot at all share one sequence
+    # (ImmersiveEngineeringSlotSequences.SingleItemInput): the fertilizer scales the
+    # cloche's growth by "growthModifier" and the fuel burns in the blast furnace for
+    # "time", both of which the declaration never names and must therefore survive.
+    # data/immersiveengineering/recipe/fertilizer/bonemeal.json:
+    #   {"type":"immersiveengineering:fertilizer","growthModifier":1.3,
+    #    "input":{"item":"minecraft:bone_meal"}}
+    @{
+        Name = 'immersiveengineering:fertilizer (no output slot)'
+        RecipeId = 'immersiveengineering:fertilizer/bonemeal'
+        Serializer = 'immersiveengineering:fertilizer'
+        RecipePath = 'data\immersiveengineering\recipe\fertilizer\bonemeal.json'
+        Fields = '{"input.0.item":"minecraft:coal","input.0.count":"1"}'
+        Expect = @{
+            'type' = 'immersiveengineering:fertilizer'
+            'growthModifier' = 1.3
+            'input.item' = 'minecraft:coal'
+        }
+        Absent = @('input.tag')
+    },
+    # data/immersiveengineering/recipe/blastfurnace/fuel_charcoal.json:
+    #   {"type":"immersiveengineering:blast_furnace_fuel",
+    #    "input":{"tag":"c:charcoal"},"time":300}
+    @{
+        Name = 'immersiveengineering:blast_furnace_fuel (no output slot)'
+        RecipeId = 'immersiveengineering:blastfurnace/fuel_charcoal'
+        Serializer = 'immersiveengineering:blast_furnace_fuel'
+        RecipePath = 'data\immersiveengineering\recipe\blastfurnace\fuel_charcoal.json'
+        Fields = '{"input.0.item":"minecraft:coal","input.0.count":"1"}'
+        Expect = @{
+            'type' = 'immersiveengineering:blast_furnace_fuel'
+            'time' = 300
+            'input.item' = 'minecraft:coal'
+        }
+        Absent = @('input.tag')
     },
     # A tag written into an item slot. The client carries a tag as its own id with a
     # leading '#' ('#ns:path'), which is how SlotPatchFields addresses a tag without a
@@ -1057,6 +1690,206 @@ $cases = @(
 # declarations: it names a serializer whose two JEI pages are declared separately, so
 # the serializer alone names no direction and has to be refused.
 $probeCases = @(
+    # The campfire pot's seasoning slots are previews with no field of their own: the recipe
+    # names seasoning processors and a tag, not the seasonings. This file has three
+    # ingredients and one processor, so the page draws a fourth input slot, and a patch
+    # addressed to it has to be refused - the sequence resolves slots only for the entries
+    # the JSON carries, so the ordinal is beyond everything it can name. Declared as the
+    # field list "ingredients.%d" instead, this same patch would APPEND a fourth ingredient.
+    @{
+        Name = 'cobblemon:campfire_pot_recipe (a seasoning preview slot has no field)'
+        Bundle = 'declared-probe-campfire-pot-seasoning'
+        RecipeId = 'cobblemon:campfire_pot/black_aprijuice'
+        Serializer = 'cobblemon:cooking_pot_shapeless'
+        RecipePath = 'data\cobblemon\recipe\campfire_pot\black_aprijuice.json'
+        Fields = '{"input.3.item":"minecraft:sugar","input.3.count":"1"}'
+        Written = $false
+        ExpectResponse = 'Import failed: stale or unsupported patch'
+    },
+    # Create's mechanical crafting page draws one INPUT slot per pattern cell, blanks
+    # included, but a blank cell has no "key" entry to edit. The sequence records the
+    # blank's ordinal as a slot without a field, so a patch addressed to it is refused -
+    # and, crucially, not treated as a prefix-count slot, which a field list would have
+    # let through: crushing_wheel's pattern is [" AAA ", ...], so ordinal 0 is blank and
+    # the letters only start at ordinal 1. The recipe is deliberately NOT wand_of_symmetry:
+    # a probe removes its target file before importing, and that file is the declared
+    # case's own artifact - pointing the probe at it would delete the case's output and
+    # the after-reload assertion would find it missing.
+    @{
+        Name = 'create:mechanical_crafting (a blank pattern cell has no field)'
+        Bundle = 'declared-probe-mechanical-crafting-blank'
+        RecipeId = 'create:mechanical_crafting/crushing_wheel'
+        Serializer = 'create:mechanical_crafting'
+        RecipePath = 'data\create\recipe\mechanical_crafting\crushing_wheel.json'
+        Fields = '{"input.0.item":"minecraft:iron_ingot","input.0.count":"1"}'
+        Written = $false
+        ExpectResponse = 'Import failed: stale or unsupported patch'
+    },
+    # The sequenced assembly sequence resolves one slot per step that draws one, so an ordinal
+    # past them refuses the whole patch rather than writing somewhere nearby. track draws three
+    # inputs (the base ingredient plus two deploying steps), so input.3 names no field. It is
+    # deliberately NOT one of the two files the declared cases use: a probe deletes its target
+    # before importing, which would take a declared case's output with it.
+    @{
+        Name = 'create:sequenced_assembly (an ordinal past the steps the page draws)'
+        Bundle = 'declared-probe-sequenced-assembly-past-steps'
+        RecipeId = 'create:sequenced_assembly/track'
+        Serializer = 'create:sequenced_assembly'
+        RecipePath = 'data\create\recipe\sequenced_assembly\track.json'
+        Fields = '{"input.3.item":"minecraft:iron_ingot","input.3.count":"1"}'
+        Written = $false
+        ExpectResponse = 'Import failed: stale or unsupported patch'
+    },
+    # A clear on a FIXED array element. The clear gesture removes an element of a
+    # variable-arity list, because neither "minecraft:air" nor a zero count parses in the
+    # mods' codecs; on a fixed field that removal shrinks a list the mod may require.
+    # Create's item_application page is the case that proved it: it draws two inputs and
+    # ItemApplicationRecipe.getRequiredHeldItem() throws "Item Application Recipe has no
+    # tool!" as soon as the decoded list holds fewer than two entries - Create's own JEI
+    # category builds its layout through that method, so the exception takes JEI's whole
+    # recipe area down. The patch below is refused by the pre-write gate and nothing is
+    # written; the declared case below clears a REPEAT element instead and still removes
+    # it, so the two halves of the rule are pinned together.
+    @{
+        Name = 'create:item_application (a fixed element cannot be cleared)'
+        Bundle = 'declared-probe-item-application-clear'
+        RecipeId = 'create:item_application/brass_casing_from_log'
+        Serializer = 'create:item_application'
+        RecipePath = 'data\create\recipe\item_application\brass_casing_from_log.json'
+        Fields = '{"input.1.item":"minecraft:air","input.1.count":"0"}'
+        Written = $false
+        ExpectResponse = 'Import failed: stale or unsupported patch'
+    },
+    # A recipe whose original JSON carries a neoforge:conditions block. The vanilla
+    # rebuild path rebuilds the record from the recipe object, which does not carry the
+    # condition, so until this probe the condition was dropped and the edit silently
+    # made a gated recipe unconditional (103 of the pack's vanilla-typed recipe files
+    # carry one). The block is copied from the original JSON, so it survives verbatim
+    # while "category" - the other record field this path used to drop - is written back
+    # too.
+    # data/create/recipe/smelting/ingot_lead_compat_mekanism.json is
+    #   {"neoforge:conditions":[{"type":"neoforge:mod_loaded","modid":"mekanism"}],
+    #    "type":"minecraft:smelting","category":"blocks","cookingtime":200,"experience":0.1,
+    #    "ingredient":{"item":"create:crushed_raw_lead"},
+    #    "result":{"id":"mekanism:ingot_lead"}}
+    @{
+        Name = 'create:fan_blasting (a gated smelting recipe keeps its neoforge:conditions)'
+        Bundle = 'declared-probe-smelting-conditions'
+        RecipeId = 'create:smelting/ingot_lead_compat_mekanism'
+        Serializer = 'minecraft:smelting'
+        RecipePath = 'data\create\recipe\smelting\ingot_lead_compat_mekanism.json'
+        Fields = '{"output.item":"minecraft:iron_ingot","output.count":"2","recipe.cooking_time":"100"}'
+        BaseSlots = ('create:smelting/ingot_lead_compat_mekanism|minecraft:smelting' +
+            '|input.0=input:item:create:crushed_raw_lead:1' +
+            '|output=output:item:mekanism:ingot_lead:1|experience=0.1|cooking_time=200')
+        Written = $true
+        Expect = @{
+            'type' = 'minecraft:smelting'
+            'category' = 'blocks'
+            'ingredient.item' = 'create:crushed_raw_lead'
+            'experience' = 0.1
+            'cookingtime' = 100
+            'result.id' = 'minecraft:iron_ingot'
+            'result.count' = 2
+            'neoforge:conditions.0.type' = 'neoforge:mod_loaded'
+            'neoforge:conditions.0.modid' = 'mekanism'
+        }
+    },
+    # The three pages below are the A1 rows the checklist marks `done` without any
+    # declaration: what they display *is* the recipe the recipe manager holds (the dump's
+    # serializer column names it), so the editor models them through the vanilla adapter
+    # and the patch carries that recipe's own serializer - the same path the vanilla page
+    # of that serializer uses. Each probe pins one serializer on the Create page that
+    # motivated it: block_cutting draws the minecraft:stonecutting recipes, fan_smoking
+    # the minecraft:smoking ones, and automatic_shaped the minecraft:crafting_shapeless
+    # ones (its automatic_packing sibling, a minecraft:crafting_shaped page, is above).
+    # None of them is declared, so the fingerprint is the real one and each BaseSlots
+    # spells out the model the server rebuilds from the recipe itself.
+    @{
+        Name = 'create:block_cutting (…_stonecutting, minecraft:stonecutting)'
+        Bundle = 'declared-probe-block-cutting'
+        RecipeId = 'create:exposed_copper_shingle_stairs_from_exposed_copper_shingles_stonecutting'
+        Serializer = 'minecraft:stonecutting'
+        RecipePath = 'data\create\recipe\exposed_copper_shingle_stairs_from_exposed_copper_shingles_stonecutting.json'
+        # data/create/recipe/exposed_copper_shingle_stairs_from_exposed_copper_shingles_stonecutting.json is
+        #   {"type":"minecraft:stonecutting","ingredient":{"item":"create:exposed_copper_shingles"},
+        #    "result":{"count":1,"id":"create:exposed_copper_shingle_stairs"}}
+        # - a stonecutting recipe whose ingredient is one item, so the fingerprint needs no
+        # tag resolution.
+        Fields = '{"input.0.item":"minecraft:stone","input.0.count":"1","output.item":"minecraft:stone_stairs","output.count":"4"}'
+        BaseSlots = ('create:exposed_copper_shingle_stairs_from_exposed_copper_shingles_stonecutting' +
+            '|minecraft:stonecutting|input.0=input:item:create:exposed_copper_shingles:1' +
+            '|output=output:item:create:exposed_copper_shingle_stairs:1')
+        Written = $true
+        Expect = @{
+            'type' = 'minecraft:stonecutting'
+            'ingredient.item' = 'minecraft:stone'
+            'result.id' = 'minecraft:stone_stairs'
+            'result.count' = 4
+        }
+        Absent = @('ingredient.tag')
+    },
+    @{
+        Name = 'create:fan_smoking (create:smoking/bread, minecraft:smoking)'
+        Bundle = 'declared-probe-fan-smoking'
+        RecipeId = 'create:smoking/bread'
+        Serializer = 'minecraft:smoking'
+        RecipePath = 'data\create\recipe\smoking\bread.json'
+        # data/create/recipe/smoking/bread.json is
+        #   {"type":"minecraft:smoking","category":"food","cookingtime":100,"experience":0.0,
+        #    "ingredient":{"item":"create:dough"},"result":{"count":1,"id":"minecraft:bread"}}
+        Fields = '{"output.item":"minecraft:cooked_porkchop","output.count":"2","recipe.cooking_time":"150"}'
+        BaseSlots = ('create:smoking/bread|minecraft:smoking|input.0=input:item:create:dough:1' +
+            '|output=output:item:minecraft:bread:1|experience=0.0|cooking_time=100')
+        Written = $true
+        Expect = @{
+            'type' = 'minecraft:smoking'
+            'category' = 'food'
+            'ingredient.item' = 'create:dough'
+            'experience' = 0.0
+            'cookingtime' = 150
+            'result.id' = 'minecraft:cooked_porkchop'
+            'result.count' = 2
+        }
+    },
+    @{
+        Name = 'create:automatic_shaped (…pink_table_cloth_clear, minecraft:crafting_shapeless)'
+        Bundle = 'declared-probe-auto-shaped'
+        RecipeId = 'create:crafting/logistics/pink_table_cloth_clear'
+        Serializer = 'minecraft:crafting_shapeless'
+        RecipePath = 'data\create\recipe\crafting\logistics\pink_table_cloth_clear.json'
+        # data/create/recipe/crafting/logistics/pink_table_cloth_clear.json is
+        #   {"type":"minecraft:crafting_shapeless","category":"misc",
+        #    "ingredients":[{"item":"create:pink_table_cloth"}],
+        #    "result":{"count":1,"id":"create:pink_table_cloth"}}
+        # The rewritten ingredient is written in the vanilla shape, which carries no count.
+        Fields = '{"input.4.item":"minecraft:white_wool","input.4.count":"1"}'
+        # A shapeless recipe is modelled on the 3x3 grid JEI draws, so its one
+        # ingredient sits in the middle cell (input.4) and the other eight slots are
+        # empty - the client report's modelled_samples spells exactly that out for
+        # create:crafting/logistics/pink_table_cloth_clear, which is what the grid
+        # below repeats.
+        BaseSlots = ('create:crafting/logistics/pink_table_cloth_clear|minecraft:crafting_shapeless' +
+            '|input.0=input' +
+            '|input.1=input' +
+            '|input.2=input' +
+            '|input.3=input' +
+            '|input.4=input:item:create:pink_table_cloth:1' +
+            '|input.5=input' +
+            '|input.6=input' +
+            '|input.7=input' +
+            '|input.8=input' +
+            '|output=output:item:create:pink_table_cloth:1')
+        Written = $true
+        Expect = @{
+            'type' = 'minecraft:crafting_shapeless'
+            'category' = 'misc'
+            'ingredients.0.item' = 'minecraft:white_wool'
+            'result.id' = 'create:pink_table_cloth'
+            'result.count' = 1
+        }
+        Absent = @('ingredients.0.count')
+    },
     # jerm:jerm_repair is JEI's own anvil page with mod supplied entries: the client
     # report models it entirely through the "jei-generated" route with serializer
     # "jei:anvil" and ids "jei:anvil_<hash>". Those pages are read-only by design - the
@@ -1182,33 +2015,44 @@ $probeCases = @(
         Written = $false
         ExpectResponse = 'Import failed: stale or unsupported patch'
     },
-    # silentgear:gear_crafting is Silent Gear's GearCraftingRecipeCategoryJei page. Its
-    # modelable recipes are silentgear:compound_part ones (the rest of the sampled 40 carry
-    # silentgear:gear_crafting). CompoundPartRecipe extends ShapelessRecipe, so it used to
-    # be modelled as a crafting grid even though its ingredients are Silent Gear's own
-    # {"type":"silentgear:blueprint"/"material"} forms; the server never accepted the edit
-    # for it (the import answered "stale or unsupported patch"), so the client was offering
-    # a slot whose patch the server refused. With the adapter gated on the two vanilla
-    # crafting serializers the page no longer models at all, and the patch is refused by the
-    # same pre-write gate - nothing is written.
-    # data/silentgear/recipe/gear/sickle_head.json is
-    #   {"type":"silentgear:compound_part","category":"equipment",
-    #    "ingredients":[{"type":"silentgear:blueprint",...},{"type":"silentgear:material",...} x3],
-    #    "result":{"count":1,"id":"silentgear:sickle_blade"}}
+    # The gear_crafting page draws its ingredient list as a grid (Silent Gear's own
+    # category lays entry i at cell i), so the page's slots ARE the list's ordinals:
+    # input.0..input.(n-1) are the n ingredients, and the first cell beyond the list is the
+    # variable-arity "spare slot" the declared mechanism documents. This probe pins what a
+    # drop there does on the compound_part type - it APPENDS an ingredient instead of
+    # rewriting one - which is the same contract create:blueprint's inputs.%d has.
+    # (The probe used to assert the opposite: before the page was declared, its patch was
+    # refused by the pre-write gate, because the recipe class extends ShapelessRecipe and
+    # only the crafting adapter modelled it.)
     @{
-        Name = 'silentgear:gear_crafting (silentgear:compound_part)'
+        Name = 'silentgear:gear_crafting (a drop into the first empty grid cell appends)'
         Bundle = 'declared-probe-silentgear'
         RecipeId = 'silentgear:gear/sickle_head'
         Serializer = 'silentgear:compound_part'
         RecipePath = 'data\silentgear\recipe\gear\sickle_head.json'
-        Fields = '{"input.1.item":"minecraft:oak_planks","input.1.count":"1"}'
+        Fields = '{"input.4.item":"minecraft:oak_planks","input.4.count":"1"}'
+        # The model the client builds for this recipe (report.json's modelled_samples):
+        # its four ingredients sit in cells 0..3 and cells 4..8 are empty.
         BaseSlots = ('silentgear:gear/sickle_head|silentgear:compound_part|' +
-            'input.0=input:item:silentgear:sickle_blueprint:1|input.1=input:item:minecraft:bamboo_planks:1|' +
-            'input.2=input|input.3=input:item:minecraft:bamboo_planks:1|input.4=input:item:minecraft:bamboo_planks:1|' +
-            ((5..8 | ForEach-Object { "input.$_=input" }) -join '|') +
+            'input.0=input:item:silentgear:sickle_blueprint:1|' +
+            'input.1=input:item:minecraft:bamboo_planks:1|' +
+            'input.2=input:item:minecraft:bamboo_planks:1|' +
+            'input.3=input:item:minecraft:bamboo_planks:1|' +
+            ((4..8 | ForEach-Object { "input.$_=input" }) -join '|') +
             '|output=output:item:silentgear:sickle_blade:1')
-        Written = $false
-        ExpectResponse = 'Import failed: stale or unsupported patch'
+        Written = $true
+        Expect = @{
+            'type' = 'silentgear:compound_part'
+            'category' = 'equipment'
+            'ingredients.0.type' = 'silentgear:blueprint'
+            'ingredients.1.type' = 'silentgear:material'
+            'ingredients.2.type' = 'silentgear:material'
+            'ingredients.3.type' = 'silentgear:material'
+            'ingredients.4.item' = 'minecraft:oak_planks'
+            'ingredients.4.count' = 1
+            'result.id' = 'silentgear:sickle_blade'
+            'result.count' = 1
+        }
     },
     # The serializer whose JEI pages are declared per page rather than per serializer:
     # mekanism:rotary is shown by mekanism:condensentrating (chemical_input + fluid_output)
@@ -1269,18 +2113,23 @@ $probeCases = @(
         Written = $false
         ExpectResponse = 'Import failed: stale or unsupported patch'
     },
-    # create:spout_filling, 12 of its 50 entries in the manager: the page's own
-    # sample (this id) is a datapack recipe and is reachable, while
-    # SpoutCategory#consumeRecipes synthesises the other 38. The page is not
-    # declared - a declaration would cover 12 of 50 entries - so even the
-    # reachable recipe is refused by the pre-write gate and nothing is written.
+    # create:spout_filling is declared through CreateSpoutSlotSequence, which resolves
+    # input.1 to the recipe's FLUID entry by the entry's own kind. This probe writes an
+    # ITEM into that slot: a derived declaration accepts both kinds for the page's inputs
+    # (which band an ordinal falls into is only decidable from the recipe JSON, and the
+    # server decides it there), so the pre-write gate takes the patch and the derivation
+    # refuses it - the kind of the field it resolved is not the kind the patch carries -
+    # with nothing written. The recipe here writes its fluid as a
+    # {"type":"neoforge:components",…} entry, so it also pins that the derivation counts
+    # any registered fluid ingredient type as the fluid half. The page's own sample is
+    # covered by the declared case above.
     @{
-        Name = 'create:spout_filling (datapack entry on an undeclared page)'
+        Name = 'create:spout_filling (an item cannot be written into the fluid slot)'
         Bundle = 'declared-probe-create-spout'
-        RecipeId = 'create:filling/compat/immersiveengineering/treated_wood_in_spout'
+        RecipeId = 'create:filling/glowstone'
         Serializer = 'create:filling'
-        RecipePath = 'data\create\recipe\filling\compat\immersiveengineering\treated_wood_in_spout.json'
-        Fields = '{"output.0.item":"minecraft:crimson_planks"}'
+        RecipePath = 'data\create\recipe\filling\glowstone.json'
+        Fields = '{"input.1.item":"minecraft:oak_planks","input.1.count":"1"}'
         Written = $false
         ExpectResponse = 'Import failed: stale or unsupported patch'
     },

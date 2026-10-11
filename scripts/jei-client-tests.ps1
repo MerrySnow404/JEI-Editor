@@ -154,8 +154,9 @@ foreach ($row in $rows) { $rowsByUid[$row.uid] = $row }
 # checklist; the three tag pages are locked here rather than read from the
 # document, because JEI serves them as bare
 # mezz.jei.library.plugins.jei.tags.TagInfoRecipe objects - neither a
-# RecipeHolder nor a Recipe - which no editor path accepts, so they stay
-# asserted even while the document leaves them at "todo".
+# RecipeHolder nor a Recipe - which no editor path accepts, so they are asserted
+# here as well as in the document, which marks them `gap` too. A page in both
+# lists is simply required to model nothing twice, which is harmless.
 #
 # This is the honest end state, not a missing feature: a tag page displays a
 # tag's member list (its input slot and its output slot show the same members),

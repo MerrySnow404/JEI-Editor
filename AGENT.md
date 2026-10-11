@@ -104,6 +104,20 @@ mod metadata 在 `src/clientTest/resources/META-INF/neoforge.mods.toml`）。它
   并由测试模组用模组自己加载好的配方独立重算一遍：输入必须是「每个合并后的物品原料一个槽，随后每个流体原料
   一个槽」（合并规则 = `ItemHelper.condenseIngredients` 的 `Ingredient.getItems()` 逐项相等），
   物品带在流体带之前，槽数对不上就失败——这是客户端侧证明「页面画出的槽位与服务端的推导一致」的那条断言；
+  「合并后的物品原料」这条重算只对声明了 `condensesItemInputs()` 的序列生效（Create 盆地那种物品带来自
+  `getIngredients()` 的页面），非 Create 的序列（IE/Silent Gear 的物品带在 JSON 字段里）只受
+  「物品带在流体带之前」「槽数与页面一致」两条通用断言约束；
+  派生序列还可以声明**哪些输入序号没有字段**（`fieldBackedInputOrdinals(loadedRecipe, inputCount)` 返回
+  「有字段」的序号**集合**）：客户端把其余输入槽建成只读（`ingredient() == null`）、不提供拖拽，测试模组则要求
+  「页面上该槽显示的原料为空」的输入槽必须被该集合排除（即序列确实声明了它没有字段），末尾的
+  `itemSlots + fluidSlots + fieldlessSlots == inputs` 断言把这些槽数算清。两种形态都已有页面：
+  `cobblemon:campfire_pot_recipe` 的无字段槽位在**末尾**（预览调味料），`create:mechanical_crafting` 的
+  无字段槽位**夹在中间**（`pattern` 的空格格子）——所以契约给的是序号集合而不是「前 K 个」；
+  每个槽还可以有**自己的路径**（`DerivedSlot` 的 paths 是列表）：`create:sequenced_assembly` 的槽位顺着
+  `sequence` 的每一步排布（base `ingredient`、deploying 画该步第 2 个物品、filling 画该步第 1 个流体、
+  pressing/cutting 不画），序号到字段因此是一张路径表而不是模式；这类页面若把流体槽排在物品槽之前
+  （sequenced assembly 的 filling 步就可能），要声明 `drawsBandsInDisplayOrder() == false`，
+  「物品带全在流体带之前」那条断言才会跳过——它是盆地页的性质，不是派生序列的普遍性质；
 - 嵌套原料字段（`withPreservedIngredientBase`）：`mekanism:painting` 的 `item_input` 在 160/176 份文件里是
   `{"type":"neoforge:difference","base":…,"subtracted":…}`，写回只替换 `base`、保留 `type`/`count`/`subtracted`。
   这个节点在页面上看不见（JEI 只显示 difference 的成员），所以测试模组自己从数据包资源管理器读出该配方的
@@ -166,6 +180,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\jei-client-tests.ps1
 （`build\client-test\wired-pages.txt` 只写已接入页面）。随后启动 `runClientTest`，等 `build\client-test\report.json`
 出现后结束客户端进程，再根据报告打印逐页表格（`gap` / `KNOWN UNSUPPORTED` / `NOT WIRED` 各有标注）。
 客户端内断言失败或 `gap`/锁定页面产生了模型时脚本退出码为 1；`docs/**` 的变更由人工维护，脚本只读它。
+
+测试模组进的是一个一次性世界，「在关卡里 + 无界面」会让游戏抓取光标并把它居中、限制在窗口内——
+操作者的鼠标会被抢走。所以 `JeiEditorClientTests` 在每个 `ClientTickEvent.Post` 里（含报告写完之后）
+都执行一次 `releaseGrabbedMouse()`：`isMouseGrabbed()` 为真就 `releaseMouse()`。这条 walk 全程走 JEI API、
+不依赖物理鼠标，释放它不影响测试；**新增任何自动化客户端步骤时不要绕过这一步**。
 
 ### 发布
 

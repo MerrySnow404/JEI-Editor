@@ -4,6 +4,7 @@ import com.google.gson.JsonObject;
 import mezz.jei.api.runtime.IJeiRuntime;
 import mezz.jei.common.Internal;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.MouseHandler;
 import net.minecraft.client.gui.screens.AccessibilityOnboardingScreen;
 import net.minecraft.client.gui.screens.TitleScreen;
 import net.minecraft.world.Difficulty;
@@ -90,6 +91,15 @@ public final class JeiEditorClientTests {
 
         @SubscribeEvent
         public void onClientTick(ClientTickEvent.Post event) {
+            // The operator shares this desktop with the run. Joining the throwaway world
+            // makes the game grab and centre the cursor, which confines the operator's
+            // mouse to the game window for as long as the run lives - so the release has
+            // to happen every tick, including after the report is written (the harness
+            // stops the client a little later), not only at the end. This is the same
+            // "hand the cursor back" step the AutoJS harness runs after every drive call;
+            // nothing in this runner is driven by the physical mouse, so releasing it
+            // cannot affect the walk.
+            releaseGrabbedMouse();
             if (finished) {
                 return;
             }
@@ -209,5 +219,20 @@ public final class JeiEditorClientTests {
     private static int modListSize() {
         ModList modList = ModList.get();
         return modList == null ? -1 : modList.getMods().size();
+    }
+
+    /**
+     * Hands the cursor back to the operator when the game is holding it. Called every
+     * tick, because the game re-grabs it while it sits in the throwaway world.
+     */
+    private static void releaseGrabbedMouse() {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft == null) {
+            return;
+        }
+        MouseHandler mouseHandler = minecraft.mouseHandler;
+        if (mouseHandler != null && mouseHandler.isMouseGrabbed()) {
+            mouseHandler.releaseMouse();
+        }
     }
 }

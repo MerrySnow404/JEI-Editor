@@ -11,10 +11,13 @@ registered page and its status (`done` / `declared` / `gap` / `todo`). Do not
 duplicate its tables here. The procedure for turning one more page into an
 editable one is **[JEI_PAGE_COMPAT_WORKFLOW.md](JEI_PAGE_COMPAT_WORKFLOW.md)**.
 
-As of the last generated checklist: 188 pages are registered in the development
-environment; 68 are wired for editing — the 13 vanilla pages below plus 55
-declared mod pages. The client page tests (`scripts/jei-client-tests.ps1`) assert
-that every wired page models at least one recipe and that every page marked `gap`
+As of the last generated checklist (and the last `jei-verify` run): 188 pages are
+registered in the development environment; 91 are wired for editing — the 13
+vanilla pages below plus the mod pages that carry a declaration or that display a
+vanilla recipe the editor rebuilds itself. 31 pages are marked `gap` (nothing on
+them can be patched) and none is left `todo`. The client page tests
+(`scripts/jei-client-tests.ps1`) assert that every wired page models at least one
+recipe and that every page marked `gap` — plus a separate known-unsupported list —
 produces no model at all.
 
 ## Vanilla pages
@@ -83,7 +86,8 @@ A mod recipe type has no per-mod reader or writer. Instead it has one
 
 The declarations are grouped per mod family —
 `CreateRecipeDeclarations`, `ImmersiveEngineeringRecipeDeclarations`,
-`MekanismRecipeDeclarations`, `MiscRecipeDeclarations` — and aggregated by
+`MekanismRecipeDeclarations`, `CobblemonRecipeDeclarations`,
+`SilentGearRecipeDeclarations`, `MiscRecipeDeclarations` — and aggregated by
 `ModdedRecipeAdapters`, so adding a page never edits a shared list. The client
 models a declared page from JEI's own slot views (`ModdedRecipeModelSupport`);
 the server patches a copy of the recipe's original JSON in place
@@ -94,7 +98,7 @@ and live in `common` (`RecipeFieldMapping`, `EditorIngredient`, `SlotPatchFields
 Which types are declared, and with which fields, is exactly the A1/A2/B tables of
 [JEI_PAGE_COMPAT_TODO.md](JEI_PAGE_COMPAT_TODO.md). A type whose JSON nests
 ingredients or carries values a declaration cannot express stays undeclared and
-is listed there as `gap` or `todo`.
+is listed there as `gap`.
 
 ## Pages that display another recipe type's recipes
 

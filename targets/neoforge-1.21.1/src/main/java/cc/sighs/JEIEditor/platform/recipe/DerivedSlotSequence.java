@@ -4,6 +4,7 @@ import cc.sighs.JEIEditor.editor.IngredientKind;
 import com.google.gson.JsonObject;
 import net.minecraft.world.item.crafting.Recipe;
 
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -68,6 +69,67 @@ public interface DerivedSlotSequence {
 
     /** The same bound for the output slots. */
     boolean outputCountFits(int count);
+
+    /**
+     * Whether the page's item input slots are one per <em>condensed</em> entry of
+     * the recipe's own ingredient list - the grouping
+     * {@code ItemHelper.condenseIngredients} performs over
+     * {@code Recipe#getIngredients()}, which is what Create's basin pages draw.
+     *
+     * <p>It exists so the client test can hold such a page against the
+     * {@code Ingredient} objects the mod loaded, without the recipe JSON: that is
+     * an independent expectation, because the condensation is re-derived from the
+     * recipe rather than taken from the sequence. A sequence over a mod whose
+     * recipes inherit the interface's empty {@code getIngredients()} - Immersive
+     * Engineering, whose {@code IESerializableRecipe} stores its ingredients in
+     * its own fields instead - cannot be checked that way, so it answers false and
+     * the test falls back to the count bound and the JSON-derived slot
+     * <em>count</em> the page really drew (see
+     * {@code checkDerivedShape}).
+     */
+    default boolean condensesItemInputs() {
+        return false;
+    }
+
+    /**
+     * The input ordinals of the page that name a declared field, for the recipe the mod
+     * loaded. The client has no recipe JSON, but it does hold the loaded recipe, so a
+     * derivation whose page draws slots the JSON has no field for can say which ones those
+     * are: the editor then models them as read-only instead of offering a drop the server
+     * would refuse (and which, for a variable-arity list, would even append an entry).
+     *
+     * <p>Two shipped pages need it. The campfire pot draws one INPUT slot per ingredient and
+     * then one per matching seasoning processor, and a seasoning slot is a preview with no
+     * field: {@code CampfirePotRecipeCategory} names no JSON key for it. Mechanical crafting
+     * draws one INPUT slot per PATTERN CELL - empty cells included - and a cell that is a
+     * space has no ingredient: it is read-only, in the middle of the ordering rather than
+     * after a prefix, which is why this is a set of ordinals and not a count.
+     *
+     * <p>Default: every input slot is field-backed, which is what a page whose layout is
+     * exactly its declared slots wants.
+     */
+    default Set<Integer> fieldBackedInputOrdinals(Recipe<?> loaded, int inputCount) {
+        Set<Integer> ordinals = new LinkedHashSet<Integer>();
+        for (int ordinal = 0; ordinal < inputCount; ordinal++) {
+            ordinals.add(Integer.valueOf(ordinal));
+        }
+        return ordinals;
+    }
+
+    /**
+     * Whether the page draws every item input before every fluid input. True for the pages
+     * this contract was written for - Create's basin pages condense the recipe's item
+     * ingredients into one band and put it before the fluid ones - and the client test checks
+     * it for a sequence that claims it.
+     *
+     * <p>False for a page whose slots follow something else: sequenced assembly lays its slots
+     * out along the recipe's steps, so a filling step's fluid slot sits wherever that step is
+     * and an item slot may follow it. Declaring the property there would assert something
+     * about the recipe that the page's own layout does not promise.
+     */
+    default boolean drawsBandsInDisplayOrder() {
+        return true;
+    }
 
     /**
      * The page's input slots, in display order, or empty when this recipe does

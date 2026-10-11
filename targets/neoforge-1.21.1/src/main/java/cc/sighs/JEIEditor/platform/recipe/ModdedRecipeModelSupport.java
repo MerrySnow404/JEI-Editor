@@ -10,6 +10,7 @@ import mezz.jei.api.gui.ingredient.IRecipeSlotsView;
 import mezz.jei.api.ingredients.ITypedIngredient;
 import mezz.jei.api.recipe.RecipeIngredientRole;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.crafting.Recipe;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -55,6 +56,20 @@ public final class ModdedRecipeModelSupport {
 
     public static Optional<EditorModel> createModel(IRecipeSlotsView slots, String recipeId, String serializerId,
                                                     ResourceLocation pageUid) {
+        return createModel(slots, recipeId, serializerId, pageUid, null);
+    }
+
+    /**
+     * The same, with the recipe the mod loaded.
+     *
+     * <p>{@code loaded} is what a recipe-derived sequence needs to say how much of the page
+     * its fields really cover ({@link DerivedSlotSequence#fieldBackedInputOrdinals}): a page
+     * that draws slots no field names - the campfire pot's seasoning previews - marks them
+     * read-only instead of offering a drop the server would refuse. Callers that have no
+     * recipe object pass null, which keeps every slot field-backed.
+     */
+    public static Optional<EditorModel> createModel(IRecipeSlotsView slots, String recipeId, String serializerId,
+                                                    ResourceLocation pageUid, Recipe<?> loaded) {
         // A page-scoped declaration answers for its own uid only, so the lookup is by
         // page first and by the recipe's serializer after that.
         Optional<ModdedRecipeAdapter> declared = ModdedRecipeAdapters.forPage(serializerId,
@@ -107,10 +122,18 @@ public final class ModdedRecipeModelSupport {
 
         List<EditorSlot> editorSlots = new ArrayList<EditorSlot>();
         Map<String, String> properties = new LinkedHashMap<String, String>();
+        // A recipe-derived sequence may cover only some of the page's input slots: the rest
+        // are slots the page draws that no field names (see fieldBackedInputOrdinals), and
+        // they are modelled empty so the editor offers no drag the server would refuse.
+        Set<Integer> fieldBacked = derived.isPresent()
+                ? derived.get().fieldBackedInputOrdinals(loaded, inputs.size()) : null;
         for (int index = 0; index < inputs.size(); index++) {
             String key = keys.get().get(index);
-            editorSlots.add(new EditorSlot(key, "input", representative(inputs.get(index),
-                    declaredKinds(adapter, key, false), requiredId(adapter, key, false)).orElse(null)));
+            boolean editable = fieldBacked == null || fieldBacked.contains(Integer.valueOf(index));
+            editorSlots.add(new EditorSlot(key, "input", editable
+                    ? representative(inputs.get(index),
+                            declaredKinds(adapter, key, false), requiredId(adapter, key, false)).orElse(null)
+                    : null));
             // The slot mapper already reads this prefix; declaring it keeps the
             // hover/drop mapping deterministic when JEI's order is not obvious.
             properties.put(JeiVanillaRecipeEditorAdapter.VISUAL_INPUT_PROPERTY_PREFIX + index, key);

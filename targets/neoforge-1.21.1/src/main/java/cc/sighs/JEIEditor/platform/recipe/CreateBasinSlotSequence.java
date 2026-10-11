@@ -125,9 +125,19 @@ final class CreateBasinSlotSequence implements DerivedSlotSequence {
         return count >= 1;
     }
 
+    /**
+     * The item band is the condensed ingredient list, which is what
+     * {@code Recipe#getIngredients()} of a Create recipe carries - see
+     * {@link DerivedSlotSequence#condensesItemInputs()}.
+     */
+    @Override
+    public boolean condensesItemInputs() {
+        return true;
+    }
+
     @Override
     public Optional<List<DerivedSlot>> inputSlots(JsonObject recipe, Recipe<?> loaded) {
-        Optional<JsonArray> entries = array(recipe, INGREDIENTS);
+        Optional<JsonArray> entries = CreateIngredientShapes.array(recipe, INGREDIENTS);
         if (!entries.isPresent()) {
             return Optional.empty();
         }
@@ -136,11 +146,11 @@ final class CreateBasinSlotSequence implements DerivedSlotSequence {
         List<Integer> fluidIndices = new ArrayList<Integer>();
         for (int index = 0; index < entries.get().size(); index++) {
             JsonElement entry = entries.get().get(index);
-            if (isFluidIngredient(entry)) {
+            if (CreateIngredientShapes.isFluidIngredient(entry)) {
                 fluidIndices.add(Integer.valueOf(index));
                 continue;
             }
-            Optional<Ingredient> ingredient = decodeIngredient(entry);
+            Optional<Ingredient> ingredient = CreateIngredientShapes.decodeIngredient(entry);
             if (!ingredient.isPresent()) {
                 return Optional.empty();
             }
@@ -159,7 +169,7 @@ final class CreateBasinSlotSequence implements DerivedSlotSequence {
             return Optional.empty();
         }
         for (int index = 0; index < itemIngredients.size(); index++) {
-            if (!sameItems(loadedIngredients.get(index).getItems(),
+            if (!CreateIngredientShapes.sameItems(loadedIngredients.get(index).getItems(),
                     itemIngredients.get(index).getItems())) {
                 return Optional.empty();
             }
@@ -173,7 +183,7 @@ final class CreateBasinSlotSequence implements DerivedSlotSequence {
             String path = INGREDIENTS + "." + itemIndices.get(index);
             int group = -1;
             for (int candidate = 0; candidate < groups.size(); candidate++) {
-                if (sameItems(groups.get(candidate), items)) {
+                if (CreateIngredientShapes.sameItems(groups.get(candidate), items)) {
                     group = candidate;
                     break;
                 }
@@ -206,7 +216,7 @@ final class CreateBasinSlotSequence implements DerivedSlotSequence {
      */
     @Override
     public Optional<List<DerivedSlot>> outputSlots(JsonObject recipe, Recipe<?> loaded) {
-        Optional<JsonArray> entries = array(recipe, RESULTS);
+        Optional<JsonArray> entries = CreateIngredientShapes.array(recipe, RESULTS);
         if (!entries.isPresent()) {
             return Optional.empty();
         }
@@ -215,7 +225,7 @@ final class CreateBasinSlotSequence implements DerivedSlotSequence {
         for (int index = 0; index < entries.get().size(); index++) {
             JsonElement entry = entries.get().get(index);
             String path = RESULTS + "." + index;
-            if (isFluidResult(entry)) {
+            if (CreateIngredientShapes.isFluidResult(entry)) {
                 fluids.add(DerivedSlot.of(IngredientKind.FLUID, path));
             } else if (entry.isJsonObject() && entry.getAsJsonObject().has(ID)) {
                 items.add(DerivedSlot.of(IngredientKind.ITEM, path));
@@ -227,75 +237,5 @@ final class CreateBasinSlotSequence implements DerivedSlotSequence {
         return Optional.of(items);
     }
 
-    /** The array at {@code key}, or empty when the recipe does not carry one. */
-    private static Optional<JsonArray> array(JsonObject recipe, String key) {
-        if (recipe == null) {
-            return Optional.empty();
-        }
-        JsonElement node = recipe.get(key);
-        return node != null && node.isJsonArray() ? Optional.of(node.getAsJsonArray()) : Optional.empty();
-    }
 
-    /**
-     * Whether a recipe JSON entry is a fluid ingredient: its {@code type} names a
-     * registered fluid ingredient type. Create's {@code SIZED_FLUID_INGREDIENT}
-     * requires that {@code type} on both of its branches, so no item ingredient can
-     * carry one, and {@code neoforge:block_tag} - an item ingredient type - is
-     * registered for items only.
-     */
-    private static boolean isFluidIngredient(JsonElement entry) {
-        if (entry == null || !entry.isJsonObject()) {
-            return false;
-        }
-        JsonElement type = entry.getAsJsonObject().get(TYPE);
-        if (type == null || !type.isJsonPrimitive() || !type.getAsJsonPrimitive().isString()) {
-            return false;
-        }
-        ResourceLocation id = ResourceLocation.tryParse(type.getAsString());
-        return id != null && NeoForgeRegistries.FLUID_INGREDIENT_TYPES.containsKey(id);
-    }
-
-    /** Whether a {@code results} entry decodes as a fluid stack, as the mod's codec decides. */
-    private static boolean isFluidResult(JsonElement entry) {
-        if (entry == null || !entry.isJsonObject()) {
-            return false;
-        }
-        JsonObject object = entry.getAsJsonObject();
-        String id = primitive(object, ID);
-        if (id == null) {
-            id = primitive(object, FLUID);
-        }
-        ResourceLocation parsed = id == null ? null : ResourceLocation.tryParse(id);
-        return parsed != null && BuiltInRegistries.FLUID.containsKey(parsed);
-    }
-
-    private static Optional<Ingredient> decodeIngredient(JsonElement entry) {
-        try {
-            return Ingredient.CODEC.parse(JsonOps.INSTANCE, entry).result();
-        } catch (RuntimeException exception) {
-            return Optional.empty();
-        }
-    }
-
-    /**
-     * {@code ItemStack.matches} element-wise over two item arrays of equal length,
-     * which is the comparison {@code ItemHelper.condenseIngredients} groups by.
-     */
-    private static boolean sameItems(ItemStack[] first, ItemStack[] second) {
-        if (first == null || second == null || first.length != second.length) {
-            return false;
-        }
-        for (int index = 0; index < first.length; index++) {
-            if (!ItemStack.matches(first[index], second[index])) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private static String primitive(JsonObject json, String key) {
-        JsonElement value = json.get(key);
-        return value != null && value.isJsonPrimitive() && value.getAsJsonPrimitive().isString()
-                ? value.getAsString() : null;
-    }
 }

@@ -259,7 +259,8 @@ public final class RecipePageClientTest {
         try {
             Optional<EditorModel> declared = ModdedRecipeModelSupport.createModel(slots,
                     recipeId.isPresent() ? recipeId.get().toString() : null, serializerId,
-                    category == null ? null : category.getRecipeType().getUid());
+                    category == null ? null : category.getRecipeType().getUid(),
+                    loadedRecipe(displayedRecipe));
             if (declared.isPresent()) {
                 return Optional.of(new ModelResult(declared.get(), "declared"));
             }
@@ -978,40 +979,58 @@ public final class RecipePageClientTest {
             }
             int itemSlots = 0;
             int fluidSlots = 0;
+            int fieldlessSlots = 0;
+            int inputOrdinal = 0;
+            Set<Integer> fieldBackedOrdinals = sequence.fieldBackedInputOrdinals(loadedRecipe, inputs);
             boolean fluidBandStarted = false;
             for (IRecipeSlotView slotView : slots.getSlotViews()) {
                 if (slotView.getRole() != RecipeIngredientRole.INPUT) {
                     continue;
                 }
+                int ordinal = inputOrdinal++;
                 Set<IngredientKind> shown = shownKinds(slotView);
                 if (shown.equals(ITEM_ONLY)) {
-                    if (fluidBandStarted) {
+                    if (fluidBandStarted && sequence.drawsBandsInDisplayOrder()) {
                         slotKeyIssues.add("the derived model of " + model.recipeId() + " draws the item input."
-                                + itemSlots + " after a fluid input, while the derivation puts every"
-                                + " condensed item slot before every fluid slot");
+                                + itemSlots + " after a fluid input, while the derivation declares that"
+                                + " every item input comes before every fluid input");
                     }
                     itemSlots++;
                 } else if (!shown.isEmpty() && !shown.contains(IngredientKind.ITEM)) {
                     fluidBandStarted = true;
                     fluidSlots++;
+                } else if (shown.isEmpty()) {
+                    // A slot the page draws with nothing addressable is the derivation's own
+                    // "no field here" shape - Create's mechanical crafting draws one slot per
+                    // pattern cell and a blank cell holds nothing, the campfire pot draws a
+                    // seasoning preview - so such an ordinal must NOT be in the set of
+                    // field-backed ordinals. An ordinal in that set but empty on the page is
+                    // one the derivation claims to name and does not.
+                    fieldlessSlots++;
+                    if (fieldBackedOrdinals.contains(Integer.valueOf(ordinal))) {
+                        slotKeyIssues.add("the derived model of " + model.recipeId() + " shows input."
+                                + ordinal + " with nothing addressable while the derivation declares it as"
+                                + " a slot with a field");
+                    }
                 } else {
                     slotKeyIssues.add("the derived model of " + model.recipeId() + " shows an input slot as "
-                            + (shown.isEmpty() ? "nothing addressable" : kindsText(shown))
+                            + kindsText(shown)
                             + ", which is neither the item band nor the fluid band of the derivation");
                 }
             }
             int condensed = condensedIngredientCount(loadedRecipe.getIngredients());
-            if (itemSlots != condensed) {
+            if (sequence.condensesItemInputs() && itemSlots != condensed) {
                 slotKeyIssues.add("the derived model of " + model.recipeId() + " draws " + itemSlots
                         + " item input slots, but the recipe's own " + loadedRecipe.getIngredients().size()
                         + " item ingredients condense to " + condensed + " (ItemHelper.condenseIngredients"
                         + " merges entries with equal Ingredient.getItems()), so the page and the derivation"
                         + " disagree");
             }
-            if (itemSlots + fluidSlots != inputs) {
+            if (itemSlots + fluidSlots + fieldlessSlots != inputs) {
                 slotKeyIssues.add("the derived model of " + model.recipeId() + " draws " + inputs
-                        + " input slots but its item band (" + itemSlots + ") and fluid band ("
-                        + fluidSlots + ") hold " + (itemSlots + fluidSlots));
+                        + " input slots but its item band (" + itemSlots + "), fluid band ("
+                        + fluidSlots + ") and field-less slots (" + fieldlessSlots + ") hold "
+                        + (itemSlots + fluidSlots + fieldlessSlots));
             }
         }
 

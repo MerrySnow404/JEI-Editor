@@ -40,6 +40,15 @@
 - `sampleRecipe` 里带 `id=` 和 `type=` 的同样是形态 A，`type=` 就是 `serializerId`
 - 既不是 `RecipeHolder` 也没有 `type=` → 形态 B/C/D
 
+### 1.1 A 组的四种边界（都已有页面踩过，判完要落到 `gen_checklist.py` 的集合里）
+
+| 边界 | 样子 | 处置 |
+| --- | --- | --- |
+| 显示的是 vanilla 配方本身 | holder 是模组的 wrapper，但 `id` 落回管理器里那条 vanilla `crafting_shaped` / `crafting_shapeless`（Create 的 `create:automatic_packing`、`create:fan_smoking` …） | **不加声明**（按 serializer 的声明会把页面从 vanilla 适配器手里拿走），在 `RESOLVED_VANILLA_UIDS` 具名 + 客户端测试断言"至少一个模型"，标 `done` |
+| 有 serializer，但配方只在代码里 | 管理器里没有、也没有配方 JSON（`jearchaeology`、IE 的 `arc_recycling`、Create 的 `mystery_conversion`、Silent Gear 的 fabric/super 合金） | `NOT_COVERED_UIDS` → 标 `gap`，门禁反过来断言 0 模型 |
+| 显示对象是模组 JEI 插件里的展示类 | 类在 `compat` / `integration` / 客户端 recipe-viewer 包里，没有 `id`、没有 holder（`cobblemon:berry_recipe`、`just_enough_beacons:*`、`mekanism:*_casing` …） | 同上一行：`NOT_COVERED_UIDS` → `gap` |
+| 真配方、真 JSON，但槽位寻址不了 | 页面把 `pattern` 的格子画成槽而 `key` 按字母共享；输入槽是带组件补丁的堆叠；页面上有"没有 JSON 字段"的展示槽；槽位顺着配方内部结构排布、每个槽各在一层（`create:mechanical_crafting`、`create:draining`、`cobblemon:campfire_pot_recipe`、`create:sequenced_assembly`） | 三种已有解：① `create:mechanical_crafting` / `cobblemon:campfire_pot_recipe` 已用**派生序列 + `fieldBackedInputOrdinals`** 接入（无字段的槽位如实标记、不可寻址）；② `create:sequenced_assembly` 用**逐槽路径**接入（槽位跟着 `sequence` 的每一步走，序号到字段是一张路径表）；③ 找不到机制就记 `gap`，并把**实测**到的失败原文写进理由（`create:draining` 就是这么回退的：57 条 `[B]` 失败）。清单里 `todo` 已清空 |
+
 ## 2. 数据模型
 
 跨边界的三件套都在 `common`（纯 Java，无 Minecraft 依赖）：
@@ -220,6 +229,17 @@ public static Optional<EditorModel> createModel(RecipeHolder<?> holder, HolderLo
 - reload 后配方实际生效；
 - 未编辑的同类配方没有被破坏。
 
+清单里的状态词由 `scripts/jei-category-dump/gen_checklist.py` 从源码与 dump 推出，含义固定：
+
+| 状态 | 含义 | 门禁怎么断言 |
+| --- | --- | --- |
+| `done` | vanilla 页面，或显示 vanilla 配方的页面（`RESOLVED_VANILLA_UIDS`） | `jei-client-tests.ps1` 要求**至少一个模型** |
+| `declared` | 该 serializer（或该页面 uid）有声明 | 同上 |
+| `gap` | 不可建模：配方只在代码里 / 显示的是展示类 / 缺槽位表达能力（`NOT_COVERED_UIDS`、`withReadOnlyPages`） | 反过来要求**零个模型**——哪天有人修好了，门禁会红，提示回来改清单 |
+| `todo` | 还没做，且没有已确认的硬障碍 | 不作断言 |
+
+另有 `scripts/jei-client-tests.ps1` 里一张**已知不支持**名单（`minecraft:tag_recipes/*`），也是按"必须零模型"断言的。
+
 只做了客户端建模、服务端还没通的，标 `partial`，并写清缺哪一环。
 
 ## 6. 常见坑
@@ -237,7 +257,9 @@ public static Optional<EditorModel> createModel(RecipeHolder<?> holder, HolderLo
    `fluid_stack` 64 条、`mekanism.api.chemical.ChemicalStack` 64 条，可见数等于总数。
    另外 Mekanism 的气体/灌注物/颜料/浆液共用同一个 `ChemicalStack` 类型，
    在索引里是一个整体，不是四个分组。
-3. **多产出**：模型目前只支持一个 `output` 槽，多产出页面同样需要先扩展模型。
+3. **多产出**：已支持。槽位键是 `output`（只有一个产出时）或 `output.0` / `output.1` / …（多个），
+   声明侧用有序段列表（`withConcatenatedOutputs`）或 `%d` 输出字段表达"哪个序号落到哪个 JSON 字段"；
+   客户端测试会逐个产出槽核对声明种类与页面实际显示的原料。
 4. **槽位顺序**：JEI 的输入顺序不保证等于 JSON 数组顺序。核对不上就用
    `properties["jei.input.<n>"]` 写显式映射。
 5. **fingerprint 失效**：服务端 `createRecipeJson` 会校验 `baseFingerprint`，
@@ -246,6 +268,51 @@ public static Optional<EditorModel> createModel(RecipeHolder<?> holder, HolderLo
    以及任何带组件补丁的 `ItemStack`（附魔、自定义名、容器内容）。
 7. **不要改共享文件里的通用逻辑**：新页面只加自己的 adapter 与分支，
    通用槽位映射、通用传输、通用 SavedData 不应为单个页面改动。
+8. **清空只对"可变元元素"生效**：`ModdedRecipeAdapter.isRepeatField` 是判定，
+   只有被 `%d` 模式命中的字段才会在清空时**删掉数组元素**；固定元素/固定列表的清空整条拒绝
+   （服务端拒绝、客户端抛 `IllegalArgumentException`）。原因：`minecraft:air` + `count 0`
+   在 mod 的 codec 里不合法，而"删元素"会让列表变短——`create:item_application` 就是这样被
+   写坏的：它的页面画两个输入，`ItemApplicationRecipe.getRequiredHeldItem()` 在列表少于 2 条时
+   抛 `"Item Application Recipe has no tool!"`，而 Create 的 JEI category 建布局时会走这个方法，
+   于是**整个配方区渲染崩掉**（E11）。可反之，`create:blueprint` 的 `inputs.%d` 清空是"备用槽移除"，
+   属于有意行为，两半都有 smoke 用例钉住。
+9. **vanilla 重建路径的两处保真**：重建整条记录时要从**原始 JSON** 拷回 `neoforge:conditions`
+   （否则带条件的配方会被静默改成无条件，E14），并按记录写回 `category`
+   （否则配方书分组被静默改成 `misc`，E13）。declared 路径是就地改 JSON，不受这两条影响。
+10. **流体标签不是"只换 key 的物品标签"**：物品标签保持只写 `{"tag":…}`（模组自己的形状，
+   普通 `Ingredient` 会忽略 `count`）；流体标签必须带 `amount`（`SizedFluidIngredient` 的 amount
+   有默认值 1000，漏写会静默改体积），Create 的流体还要把 `type` 写成 `neoforge:tag`。
+11. **派生序列（`DerivedSlotSequence`）的契约**：客户端只校验数量带与种类带，服务端按 JSON 解析
+   每条槽的路径；序列必须复现模组自己的推导（对着 category 的 `setRecipe` 字节码），并在能对照时
+   与模组加载出来的对象比对（如 `getIngredients()`），对不上就拒绝整条补丁。
+   **页面上"没有 JSON 字段可寻址"的槽位现在是可表达的**：`DerivedSlot` 允许 `paths` 为空（表示
+   "这个槽没有字段"），客户端靠 `fieldBackedInputOrdinals(loadedRecipe, inputCount)` 知道**哪些**
+   输入序号有字段、其余建模成只读，服务端解析到空 `paths` 就**拒绝整条补丁**（不会退化成前缀计数
+   或"追加一条"）。两个已接入的形态：`cobblemon:campfire_pot_recipe` 的无字段槽位在**末尾**（预览
+   调味料），`create:mechanical_crafting` 的无字段槽位**夹在中间**（`pattern` 的空格格子）——所以契约
+   给的是序号**集合**而不是"前 K 个"。仍表达不了的（输入槽本身是带组件补丁的堆叠，如 `create:draining`）
+   记 `gap`。
+12. **`pattern` + `key` 类页面（按字母寻址）**：`create:mechanical_crafting` 的页面把 `pattern` 的
+   每个格子画成一个输入槽（**含空格**，reading order），JSON 却按**字母**命名原料（`key.<字母>`）。
+   所以接入时：格子序号就是槽位序号（稠密网格，空格也算一格）；字母格声明路径 `key.<字母>`；空格格
+   声明空 `paths`（无字段）。**同一字母的多个格子共享同一个字段**，补丁打到其中任一格会连带改写其余
+   同字母格——这是配方自身的结构，必须在注释与 smoke 用例里写明（`wand_of_symmetry` 的 `G` 落在
+   序号 1 / 3 / 5）。接入前先用 `python` 读 jar 里的 JSON 把 `pattern` 的稠密序号算清楚，别靠眼睛数。
+13. **写回数组的边界**：`writePath` 对数组下标越界**一位**是"追加"（这是可变元列表的备用槽，
+   有意为之，如 `create:blueprint` 的 `inputs.%d`），更远则拒绝；因此一个"按序号打补丁"的声明
+   若把格子序号当成数组下标，拖到第一个空格会变成"追加一条原料"——`silentgear:gear_crafting`
+   就是这个语义，已有 smoke 用例断言。
+14. **槽位跟着配方内部结构走（逐槽路径）**：`create:sequenced_assembly` 的页面为 `sequence` 的每一步
+   画槽（base `ingredient`；`create:deploying` 画该步**第 2 个物品**条目——第 0 个是它加工的半成品；
+   `create:filling` 画该步**第 1 个流体**条目；`create:pressing`/`create:cutting` 不画），所以序号到
+   字段是一张路径表（`sequence.<i>.ingredients.<j>`），而不是某个可计算的下标公式。两个要点：①
+   `DerivedSlot` 的 paths 本来就是列表，逐槽给就行；② 这类页面**没有模组侧原料表可对照**
+   （`SequencedAssemblyRecipe.getIngredients()` 是接口默认的空表），所以只受形状校验保护——每个条目都
+   必须按 codec 自己的规则分类（流体看 `type` 是不是注册过的流体原料类型，见
+   `CreateIngredientShapes.isFluidIngredient`），分类不了就整条拒绝，不要猜。流体条目写回必须带
+   `type`（`ModdedJsonStyle.TYPED_FLUID`），因为写回是**整节点替换**，裸 `{fluid,amount}` 会被
+   `SizedFluidIngredient` 的 codec 拒掉。另外这类页面的流体槽可能排在物品槽**之前**，声明
+   `drawsBandsInDisplayOrder() == false`。
 
 ## 7. 复现取证环境
 

@@ -14,7 +14,8 @@ import java.util.Set;
 /**
  * One declared mod recipe type. Instances are built by the per-mod declaration
  * holders ({@code CreateRecipeDeclarations}, {@code MekanismRecipeDeclarations},
- * {@code ImmersiveEngineeringRecipeDeclarations}, {@code MiscRecipeDeclarations})
+ * {@code ImmersiveEngineeringRecipeDeclarations}, {@code MiscRecipeDeclarations},
+ * {@code SilentGearRecipeDeclarations})
  * and aggregated by {@link ModdedRecipeAdapters}.
  *
  * <p>Fields are recipe JSON paths in JEI display order. A plain name addresses an
@@ -348,6 +349,26 @@ final class ModdedRecipeDeclaration implements ModdedRecipeAdapter {
     @Override
     public DerivedSlotSequence derivedSlots() {
         return derivedSlots;
+    }
+
+    @Override
+    public boolean isRepeatField(String path) {
+        if (path == null) {
+            return false;
+        }
+        for (String pattern : inputFields) {
+            if (pattern.contains(cc.sighs.JEIEditor.recipe.RecipeFieldMapping.REPEAT)
+                    && matches(pattern, path)) {
+                return true;
+            }
+        }
+        for (String pattern : outputFields) {
+            if (pattern.contains(cc.sighs.JEIEditor.recipe.RecipeFieldMapping.REPEAT)
+                    && matches(pattern, path)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Override

@@ -253,6 +253,93 @@ public final class CreateRecipeDeclarations {
                 ModdedJsonStyle.TYPED_FLUID,
                 ModdedJsonStyle.FLUID_ID));
 
+        // JEI page create:spout_filling ("注液器"), 2 inputs / 1 output.
+        // data/create/recipe/filling/compat/immersiveengineering/treated_wood_in_spout.json:
+        //   {"type":"create:filling","ingredients":[{"tag":"minecraft:planks"},
+        //     {"type":"neoforge:tag","amount":125,"tag":"c:creosote"}],
+        //    "results":[{"id":"immersiveengineering:treated_wood_horizontal"}]}
+        // SpoutCategory.setRecipe adds exactly three slots:
+        //   INPUT  FillingRecipe.getIngredients().get(0)   // the item entry
+        //   INPUT  FillingRecipe.getRequiredFluid()        // the fluid entry
+        //   OUTPUT getResultItem(recipe)                   // the item result
+        // Because the two accesses are `.get(0)` and "the first fluid", the item and the
+        // fluid can sit at any index of the JSON array - Create's codec partitions one
+        // "ingredients" array into items and fluids - so the page is declared through
+        // CreateSpoutSlotSequence, which resolves each slot's path by the entry's own kind
+        // and refuses a recipe with more than one of either (the extras would be invisible
+        // on the page). The fluid input is written in Create's sized-fluid shape
+        // ({"type":"neoforge:single"/"neoforge:tag","amount":…}), which is what those files
+        // use, and the item result in the result-side item shape.
+        // The page lists 50 entries; 19 files ship under data/create/recipe/filling/** and
+        // the provenance probe documented above measured 12 of them in the manager with a
+        // JSON resource (the rest of the files are gated by neoforge:conditions whose mods
+        // are not loaded). A declared page models every entry whose layout fits - this one
+        // reports 40/40 sampled - so an entry Create synthesises at display time
+        // (SpoutCategory#consumeRecipes) gets a model too, and its patch is then refused by
+        // the server, which finds no recipe JSON for that id (scripts/jei-declared-smoke.ps1
+        // pins that refusal for the draining page's synthesised ids, where ALL sampled
+        // entries are of that kind). The 12 reachable entries are editable; the page is
+        // reported as partially covered for exactly this reason.
+        adapters.add(new ModdedRecipeDeclaration("create:filling",
+                CreateSpoutSlotSequence.INSTANCE,
+                ModdedRecipeAdapter.ItemJsonStyle.ITEM,
+                ModdedRecipeAdapter.ItemJsonStyle.ID,
+                ModdedJsonStyle.TYPED_FLUID,
+                ModdedJsonStyle.FLUID_ID));
+
+        // JEI page create:mechanical_crafting ("机械合成"), 7..13 inputs / 1 output.
+        // data/create/recipe/mechanical_crafting/crushing_wheel.json:
+        //   {"type":"create:mechanical_crafting","accept_mirrored":false,"category":"misc",
+        //    "key":{"A":{"item":"create:andesite_alloy"},"P":{"tag":"minecraft:planks"},
+        //           "S":{"tag":"c:stones"}},
+        //    "pattern":[" AAA ","AAPAA","APSPA","AAPAA"," AAA "],
+        //    "result":{"count":2,"id":"create:crushing_wheel"},"show_notification":false}
+        // MechanicalCraftingCategory.setRecipe adds OUTPUT(getResultItem) and then one INPUT
+        // slot per element of CraftingRecipe.getIngredients() - a shaped pattern's
+        // non-empty cells in reading order - so the page is declared through
+        // CreateMechanicalCraftingSlotSequence, which maps the k-th slot to the k-th
+        // non-space character of the pattern and its field "key.<character>", and checks
+        // each letter against the Ingredient the mod built for that ordinal.
+        // The consequence of that mapping is the recipe's own structure: a letter used by
+        // several cells is ONE field, so editing a cell changes the ingredient of every cell
+        // using that letter (in crushing_wheel.json the "A" cells are 13 of 25; the smoke
+        // case pins it on wand_of_symmetry's "G"). Create's own JSON cannot express
+        // per-cell ingredients, so this is what "edit this recipe" means there.
+        // "accept_mirrored", "category" and "show_notification" are undeclared and survive.
+        adapters.add(new ModdedRecipeDeclaration("create:mechanical_crafting",
+                CreateMechanicalCraftingSlotSequence.INSTANCE,
+                ModdedRecipeAdapter.ItemJsonStyle.ITEM,
+                ModdedRecipeAdapter.ItemJsonStyle.ID,
+                ModdedJsonStyle.FLUID, ModdedJsonStyle.FLUID_ID));
+
+        // JEI page create:sequenced_assembly ("序列组装"), 2..4 inputs / 1 output.
+        // data/create/recipe/sequenced_assembly/sturdy_sheet.json:
+        //   {"type":"create:sequenced_assembly","ingredient":{"tag":"c:dusts/obsidian"},
+        //    "loops":5,"transitional_item":{"id":"create:unprocessed_obsidian_sheet"},
+        //    "results":[{"id":"create:sturdy_sheet"}],
+        //    "sequence":[{"type":"create:filling","ingredients":[
+        //                    {"item":"create:unprocessed_obsidian_sheet"},
+        //                    {"type":"neoforge:single","fluid":"minecraft:lava","amount":500}],
+        //                  "results":[{"id":"create:unprocessed_obsidian_sheet"}]},
+        //                {"type":"create:pressing","ingredients":[...],"results":[...]}, ...]}
+        // SequencedAssemblyCategory.setRecipe adds one INPUT for getIngredient(), one OUTPUT
+        // for getResultItem(), and then one slot per step that its JEI sub-category draws:
+        // "create:deploying" draws the step's SECOND item ingredient, "create:filling" draws
+        // its first fluid one, and "create:pressing"/"create:cutting" draw none. The slots
+        // therefore follow the steps, at per-step paths, so the page is declared through
+        // CreateSequencedAssemblySlotSequence instead of a field list. Its steps' fluid
+        // entries are written as {"type":"neoforge:single","fluid":…,"amount":…}, which the
+        // SizedFluidIngredient codec rejects without that explicit type, so the fluid input
+        // style is TYPED_FLUID (a written node replaces the entry wholesale, keeping the type
+        // and nothing else the old node had).
+        // "loops", "transitional_item" and every step's own "results"/"type" are undeclared
+        // and survive.
+        adapters.add(new ModdedRecipeDeclaration("create:sequenced_assembly",
+                CreateSequencedAssemblySlotSequence.INSTANCE,
+                ModdedRecipeAdapter.ItemJsonStyle.ITEM,
+                ModdedRecipeAdapter.ItemJsonStyle.ID,
+                ModdedJsonStyle.TYPED_FLUID, ModdedJsonStyle.FLUID_ID));
+
         // Deliberately not declared: create:mystery_conversion ("神秘转化"), whose
         // serializer is create:conversion. Its recipes are not datapack recipes at all -
         // no "create:conversion" JSON exists in any jar or datapack, and

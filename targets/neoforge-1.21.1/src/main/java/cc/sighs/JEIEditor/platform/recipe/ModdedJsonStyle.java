@@ -29,10 +29,13 @@ public final class ModdedJsonStyle {
      * fallback is Create's own legacy form, both of which read a required
      * {@code type} field, so a bare {@code {"fluid":…,"amount":…}} inside an
      * ingredient list is rejected. {@code neoforge:single} is the type name every
-     * shipped Create recipe that names one fluid uses.
+     * shipped Create recipe that names one fluid uses - and a tag takes the sibling
+     * type name {@code neoforge:tag}
+     * ({@code mixing/chocolate.json}: {@code {"type":"neoforge:tag","amount":250,
+     * "tag":"c:milk"}}), which is what {@link #tagTypeId()} carries.
      */
     public static final ModdedJsonStyle TYPED_FLUID =
-            new ModdedJsonStyle("fluid", "amount", "neoforge:single");
+            new ModdedJsonStyle("fluid", "amount", "neoforge:single", "neoforge:tag");
     /**
      * {@code {"amount":…,"fluid":…}} written with the result-side id key, for a mod
      * whose fluid ingredient and fluid result are not the same shape.
@@ -58,15 +61,21 @@ public final class ModdedJsonStyle {
     private final String idKey;
     private final String amountKey;
     private final String typeId;
+    private final String tagTypeId;
 
     private ModdedJsonStyle(String idKey, String amountKey) {
-        this(idKey, amountKey, null);
+        this(idKey, amountKey, null, null);
     }
 
     private ModdedJsonStyle(String idKey, String amountKey, String typeId) {
+        this(idKey, amountKey, typeId, null);
+    }
+
+    private ModdedJsonStyle(String idKey, String amountKey, String typeId, String tagTypeId) {
         this.idKey = idKey;
         this.amountKey = amountKey;
         this.typeId = typeId;
+        this.tagTypeId = tagTypeId;
     }
 
     /** The key holding the ingredient id, or null when the value has no object. */
@@ -86,6 +95,17 @@ public final class ModdedJsonStyle {
      */
     public String typeId() {
         return typeId;
+    }
+
+    /**
+     * The {@code type} a written <em>tag</em> of this shape carries, or null when
+     * the shape has no type field or names tags under the same type as single
+     * ingredients. Create's fluid ingredient dispatches on the type name, and its
+     * single-fluid type {@code neoforge:single} does not accept a tag - the shipped
+     * files write {@code neoforge:tag} - so the two names are not interchangeable.
+     */
+    public String tagTypeId() {
+        return tagTypeId;
     }
 
     /**

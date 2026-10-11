@@ -36,6 +36,8 @@ public final class ModdedRecipeAdapters {
         adapters.addAll(ImmersiveEngineeringRecipeDeclarations.ALL);
         adapters.addAll(MekanismRecipeDeclarations.ALL);
         adapters.addAll(MiscRecipeDeclarations.ALL);
+        adapters.addAll(SilentGearRecipeDeclarations.ALL);
+        adapters.addAll(CobblemonRecipeDeclarations.ALL);
         ALL = Collections.unmodifiableList(adapters);
     }
 
@@ -123,18 +125,43 @@ public final class ModdedRecipeAdapters {
         return json;
     }
 
-    /** Encodes one declared value in the id/amount keys of {@code style}. */
-    public static JsonObject valueJson(ModdedJsonStyle style, String id, int amount) {
+    /**
+     * Encodes one declared value in the id/amount keys of {@code style}.
+     *
+     * <p>A tag is not the same object with {@code "tag"} in place of the style's id
+     * key - two things differ, and both follow the mods' own shipped files:
+     *
+     * <ul>
+     *   <li>the <b>type</b>. Create dispatches its fluid ingredients on an explicit
+     *       {@code type} name and its single-fluid name does not accept a tag, so
+     *       the tag form of that style is {@code neoforge:tag} instead
+     *       ({@code mixing/chocolate.json}:
+     *       {@code {"type":"neoforge:tag","amount":250,"tag":"c:milk"}}).</li>
+     *   <li>the <b>amount</b>. An item tag keeps the tag-alone shape every shipped
+     *       file uses ({@code {"tag":"c:plates/steel"}}): the item styles' amount key
+     *       is {@code count}, which belongs to a sized <em>ingredient</em> node and is
+     *       simply ignored where the tag is read, so writing it would add a key no
+     *       file has. A fluid tag is a sized fluid ingredient whose amount the codec
+     *       reads (<code>SizedFluidIngredient.FLAT_CODEC</code> reads
+     *       {@code "amount"} with the bucket volume as its default), so leaving it out
+     *       does not fail - it silently changes the volume the recipe consumes to
+     *       1000 mB, which is why the amount is written there.</li>
+     * </ul>
+     */
+    public static JsonObject valueJson(ModdedJsonStyle style, IngredientKind kind, String id, int amount) {
         JsonObject json = new JsonObject();
+        if (id != null && id.startsWith("#")) {
+            if (style.tagTypeId() != null) {
+                json.addProperty("type", style.tagTypeId());
+            }
+            json.addProperty("tag", id.substring(1));
+            if (kind != IngredientKind.ITEM && style.amountKey() != null) {
+                json.addProperty(style.amountKey(), amount);
+            }
+            return json;
+        }
         if (style.typeId() != null) {
             json.addProperty("type", style.typeId());
-        }
-        if (id != null && id.startsWith("#")) {
-            // A tag ingredient. The shipped files write `{"tag":"ns:path"}` and leave the amount
-            // out, which is also what keeps the written entry inside the shape the mod's own
-            // files use, so the tag is written alone.
-            json.addProperty("tag", id.substring(1));
-            return json;
         }
         json.addProperty(style.idKey(), id);
         json.addProperty(style.amountKey(), amount);
@@ -145,8 +172,11 @@ public final class ModdedRecipeAdapters {
      * The JSON value of one declared field: an object with the style's id and amount
      * keys, or - for a style that writes the bare amount, like Immersive
      * Engineering's {@code "creosote": 250} - the amount alone.
+     *
+     * @param kind the ingredient kind the slot holds, which decides the tag form
+     *             (see {@link #valueJson})
      */
-    public static JsonElement valueElement(ModdedJsonStyle style, String id, int amount) {
+    public static JsonElement valueElement(ModdedJsonStyle style, IngredientKind kind, String id, int amount) {
         if (id != null && id.startsWith("#") && style.amountOnly()) {
             // A bare-amount field can only carry a fluid the recipe already names, so there is no
             // way to write a tag into it; refusing beats writing something the mod would reject.
@@ -155,7 +185,7 @@ public final class ModdedRecipeAdapters {
         }
         return style.amountOnly()
                 ? new JsonPrimitive(Integer.valueOf(amount))
-                : valueJson(style, id, amount);
+                : valueJson(style, kind, id, amount);
     }
 
     public static RecipePatch replaceSlot(EditorModel model, String slotKey, EditorIngredient ingredient) {
@@ -211,6 +241,21 @@ public final class ModdedRecipeAdapters {
         if (slot.ingredient() != null && !slot.ingredient().isItem()) {
             throw new IllegalArgumentException(
                     "a " + slot.ingredient().kind().id() + " slot cannot be cleared; replace it instead");
+        }
+        // Only an element a repeatable (%d) pattern named can be removed: a fixed field
+        // has no empty form a mod codec accepts, and removing a fixed array element would
+        // shrink a list the mod may require - Create's create:item_application page throws
+        // "Item Application Recipe has no tool!" once its recipe holds fewer than two
+        // ingredients, which breaks JEI's recipe area. The server refuses such a patch;
+        // refusing it here keeps the editor from offering it.
+        Optional<ModdedRecipeAdapter> adapter = forSerializer(model.serializerId());
+        if (adapter.isPresent()) {
+            String field = RecipeFieldMapping.field(adapter.get().inputFields(),
+                    adapter.get().outputFields(), slotKey);
+            if (field != null && !adapter.get().isRepeatField(field)) {
+                throw new IllegalArgumentException(
+                        "only a variable-arity input list can be cleared");
+            }
         }
         return new RecipePatch(model.recipeId(), model.serializerId(), model.baseFingerprint(),
                 SlotPatchFields.clearItem(slotKey));

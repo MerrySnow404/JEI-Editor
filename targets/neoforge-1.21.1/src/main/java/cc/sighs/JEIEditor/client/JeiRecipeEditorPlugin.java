@@ -543,7 +543,8 @@ public final class JeiRecipeEditorPlugin implements IModPlugin {
         Optional<EditorModel> moddedModel = ModdedRecipeModelSupport.createModel(slots,
                 moddedRecipeId.isPresent() ? moddedRecipeId.get().toString() : null,
                 recipeSerializerId(displayedRecipe),
-                category == null ? null : category.getRecipeType().getUid());
+                category == null ? null : category.getRecipeType().getUid(),
+                loadedRecipe(displayedRecipe));
         if (moddedModel.isPresent()) {
             return moddedModel;
         }
@@ -577,6 +578,19 @@ public final class JeiRecipeEditorPlugin implements IModPlugin {
         }
         ResourceLocation serializerId = BuiltInRegistries.RECIPE_SERIALIZER.getKey(recipe.getSerializer());
         return serializerId == null ? null : serializerId.toString();
+    }
+
+    /**
+     * The recipe object the mod loaded for a displayed entry, or null when the page shows
+     * something that is not a recipe record. A recipe-derived sequence reads it to tell which
+     * of the page's input slots its fields actually cover
+     * ({@code DerivedSlotSequence#fieldBackedInputOrdinals}).
+     */
+    private static Recipe<?> loadedRecipe(Object displayedRecipe) {
+        if (displayedRecipe instanceof RecipeHolder<?>) {
+            return ((RecipeHolder<?>) displayedRecipe).value();
+        }
+        return displayedRecipe instanceof Recipe<?> ? (Recipe<?>) displayedRecipe : null;
     }
 
     private static Optional<RecipeHolder<?>> resolveRecipeHolder(

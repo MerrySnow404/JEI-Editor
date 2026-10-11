@@ -147,15 +147,17 @@ public final class MiscRecipeDeclarations {
         // latter also carry an "inputCount" that this declaration never names and therefore
         // preserves. HorsePowerPressCategory.setRecipe:
         //   addSlot(INPUT).addItemStacks(getIngredient().getItems())
-        //   if (hasFluidOutput()) addSlot(OUTPUT).addIngredient(FLUID_STACK, getFluidResult())
-        //   addSlot(OUTPUT).addItemStack(getResult())
-        // so OUTPUT ordinal 0 is "result" on one shape and "fluidResult" on the other. A
-        // single output field cannot name that: naming "result" leaves the ten fluid slots
-        // showing a kind the declaration does not name, which the client test reports as a
-        // declaration that can never edit them (and it is right - the server would refuse the
-        // patch). The ordered segment list is the mechanism for exactly this: the k-th OUTPUT
-        // slot is the k-th element of the concatenation of the fields the recipe actually
-        // carries, so each shape writes its own field and the declaration never guesses.
+        //   if (hasFluidOutput()) addSlot(OUTPUT).addFluidStack(getFluidResult())
+        //   else                  addSlot(OUTPUT).addItemStack(getResult())
+        // - one OUTPUT slot either way (the branch that does not run adds none), so the page
+        // draws a single output slot whose field is "fluidResult" on the ten fluid recipes and
+        // "result" on the other 27. A single output field cannot name that: naming "result"
+        // leaves the ten fluid slots showing a kind the declaration does not name, which the
+        // client test reports as a declaration that can never edit them (and it is right - the
+        // server would refuse the patch), and naming "fluidResult" would do the same to the 27.
+        // The ordered segment list is the mechanism for exactly this: the k-th OUTPUT slot is
+        // the k-th element of the concatenation of the fields the recipe actually carries, so
+        // each shape resolves to its own field and the declaration never guesses.
         adapters.add(new ModdedRecipeDeclaration("horsepowered:pressing",
                 Arrays.asList("ingredient"), Arrays.asList("result", "fluidResult"),
                 ModdedRecipeAdapter.ItemJsonStyle.ITEM,
