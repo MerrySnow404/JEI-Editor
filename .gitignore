@@ -13,6 +13,7 @@ modrinth-maven/
 **/.gradle/
 **/build/
 **/run/
+**/run-sim/
 targets/**/img.png
 *.tmp-*
 

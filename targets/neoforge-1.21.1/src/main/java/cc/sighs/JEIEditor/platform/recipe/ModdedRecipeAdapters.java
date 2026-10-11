@@ -129,6 +129,13 @@ public final class ModdedRecipeAdapters {
         if (style.typeId() != null) {
             json.addProperty("type", style.typeId());
         }
+        if (id != null && id.startsWith("#")) {
+            // A tag ingredient. The shipped files write `{"tag":"ns:path"}` and leave the amount
+            // out, which is also what keeps the written entry inside the shape the mod's own
+            // files use, so the tag is written alone.
+            json.addProperty("tag", id.substring(1));
+            return json;
+        }
         json.addProperty(style.idKey(), id);
         json.addProperty(style.amountKey(), amount);
         return json;
@@ -140,6 +147,12 @@ public final class ModdedRecipeAdapters {
      * Engineering's {@code "creosote": 250} - the amount alone.
      */
     public static JsonElement valueElement(ModdedJsonStyle style, String id, int amount) {
+        if (id != null && id.startsWith("#") && style.amountOnly()) {
+            // A bare-amount field can only carry a fluid the recipe already names, so there is no
+            // way to write a tag into it; refusing beats writing something the mod would reject.
+            throw new IllegalArgumentException(
+                    "this slot is written as a bare amount, so it cannot take a tag");
+        }
         return style.amountOnly()
                 ? new JsonPrimitive(Integer.valueOf(amount))
                 : valueJson(style, id, amount);

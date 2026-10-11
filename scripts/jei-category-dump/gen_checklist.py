@@ -169,6 +169,7 @@ DECLARED = declared_serializers()
 # keep this list in step with it.
 DECLARED_UIDS = {
     "horsepowered:chopping",
+    "horsepowered:pressing",
     "horsepowered:manual_chopping",
     "horsepowered:crushing",
     "horsepowered:drying",

@@ -32,6 +32,7 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.tags.TagKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.packs.repository.PackRepository;
 import net.minecraft.server.packs.resources.Resource;
@@ -1293,6 +1294,8 @@ public final class RecipeEditsApplier {
         // because which segment lands at which ordinal depends on it.
         RecipeFieldMapping.SegmentSource segments =
                 adapter.concatenatedOutputs() ? new JsonSegmentSource(recipe) : null;
+        List<int[]> removals = new ArrayList<int[]>();
+        List<String> removalParents = new ArrayList<String>();
         for (EditorSlot slot : model.slots()) {
             if (!hasSlotPatch(patch, slot.key())) {
                 continue;
@@ -1306,6 +1309,19 @@ public final class RecipeEditsApplier {
             }
             if (declaredField == null) {
                 return Optional.empty();
+            }
+            if (clearsItemSlot(patch, slot.key())) {
+                // A cleared element of a variable-arity list is removed rather than emptied:
+                // neither `minecraft:air` ("Item must not be minecraft:air") nor a zero count
+                // parses in the mod codecs, so the only representable "this input is gone" is
+                // absence. Applied after the writes, from the back, because removing shifts
+                // the indices of the elements still to remove.
+                String[] element = arrayElementOf(declaredField);
+                if (element != null) {
+                    removals.add(new int[]{Integer.parseInt(element[1])});
+                    removalParents.add(element[0]);
+                    continue;
+                }
             }
             JsonElement original = readPath(recipe, declaredField);
             if (adapter.preservesIngredientBase(declaredField)) {
@@ -1324,7 +1340,49 @@ public final class RecipeEditsApplier {
                 return Optional.empty();
             }
         }
+        for (int at = removals.size() - 1; at >= 0; at--) {
+            if (!removeArrayElement(recipe, removalParents.get(at), removals.get(at)[0])) {
+                return Optional.empty();
+            }
+        }
         return Optional.of(recipe);
+    }
+
+    /**
+     * The array path and element index a declared field addresses, or null when the field
+     * is a plain object path (a single-value input/output rather than one element of a list).
+     */
+    private static String[] arrayElementOf(String field) {
+        if (field == null) {
+            return null;
+        }
+        int dot = field.lastIndexOf('.');
+        if (dot <= 0 || dot == field.length() - 1) {
+            return null;
+        }
+        int index = parseIndex(field.substring(dot + 1));
+        return index < 0 ? null : new String[]{field.substring(0, dot), Integer.toString(index)};
+    }
+
+    /** Drops one element of the array at {@code arrayPath}. */
+    private static boolean removeArrayElement(JsonObject root, String arrayPath, int index) {
+        JsonElement node = readPath(root, arrayPath);
+        if (node == null || !node.isJsonArray()) {
+            return false;
+        }
+        JsonArray array = node.getAsJsonArray();
+        if (index < 0 || index >= array.size()) {
+            return false;
+        }
+        array.remove(index);
+        return true;
+    }
+
+    /** Whether the patch empties this slot ({@link SlotPatchFields#clearItem}'s shape). */
+    private static boolean clearsItemSlot(RecipePatch patch, String slotKey) {
+        return slotKey != null
+                && SlotPatchFields.CLEARED_ITEM.equals(patch.fields().get(slotKey + ".item"))
+                && SlotPatchFields.CLEARED_AMOUNT.equals(patch.fields().get(slotKey + ".count"));
     }
 
     /**
@@ -1417,9 +1475,44 @@ public final class RecipeEditsApplier {
             return Optional.empty();
         }
         JsonObject rewritten = new JsonObject();
+        String chosenId = id;
+        if (subtractedCovers(object.get("subtracted"), chosenId)) {
+            // The preserved node is `difference(base, subtracted)`. Writing a base that
+            // the subtracted side removes leaves the empty ingredient: the recipe then
+            // carries an Ingredient with no values at all, and Mekanism's
+            // incomplete-recipe scanner calls Ingredient.getValues() on it and crashes
+            // the server on the next world start. Refuse the patch instead of writing
+            // a datapack file that cannot be loaded.
+            throw new IllegalArgumentException("this input is the recipe's own set minus "
+                    + chosenId + "; picking " + chosenId + " would leave it empty");
+        }
         rewritten.addProperty(ModdedJsonStyle.of(adapter.inputStyle()).idKey(), id);
         object.add("base", rewritten);
         return Optional.of(Boolean.TRUE);
+    }
+
+    /** Whether the preserved {@code subtracted} node removes the chosen item, i.e.
+     * {@code difference(base, subtracted)} would be the empty set for it. */
+    private static boolean subtractedCovers(JsonElement subtracted, String itemId) {
+        if (subtracted == null || !subtracted.isJsonObject()) {
+            return false;
+        }
+        JsonObject object = subtracted.getAsJsonObject();
+        JsonElement item = object.get("item");
+        if (item != null && item.isJsonPrimitive()) {
+            return itemId.equals(item.getAsString());
+        }
+        JsonElement tag = object.get("tag");
+        if (tag != null && tag.isJsonPrimitive()) {
+            ResourceLocation tagId = ResourceLocation.tryParse(tag.getAsString());
+            ResourceLocation chosen = ResourceLocation.tryParse(itemId);
+            if (tagId == null || chosen == null) {
+                return false;
+            }
+            var holder = BuiltInRegistries.ITEM.getHolder(ResourceKey.create(Registries.ITEM, chosen));
+            return holder.isPresent() && holder.get().is(TagKey.create(Registries.ITEM, tagId));
+        }
+        return false;
     }
 
     /**
@@ -1515,8 +1608,14 @@ public final class RecipeEditsApplier {
         if (current.isJsonArray()) {
             int arrayIndex = parseIndex(last);
             JsonArray array = current.getAsJsonArray();
-            if (arrayIndex < 0 || arrayIndex >= array.size()) {
+            if (arrayIndex < 0 || arrayIndex > array.size()) {
                 return false;
+            }
+            if (arrayIndex == array.size()) {
+                // One past the end is the page's spare slot: dropping there appends, which is
+                // how a variable-arity input list grows.
+                array.add(value);
+                return true;
             }
             array.set(arrayIndex, value);
             return true;
@@ -1610,6 +1709,10 @@ public final class RecipeEditsApplier {
         } catch (NumberFormatException exception) {
             return Optional.empty();
         }
+        // A cleared declared item slot is NOT written as an empty node: `minecraft:air` with
+        // `count 0` writes a file the recipe loader refuses ("Parsing error loading recipe"),
+        // which silently drops the recipe on the next load -- worse than refusing the patch.
+        // See docs/JEI_REAL_UI_TEST_FINDINGS.md, E9/E10.
         if (id == null || id.isEmpty() || !kind.acceptsAmount(amount) || !validIngredientId(kind, id)) {
             return Optional.empty();
         }
@@ -1747,6 +1850,24 @@ public final class RecipeEditsApplier {
      * the written recipe is re-parsed and the write is rolled back.
      */
     private static boolean validIngredientId(IngredientKind kind, String value) {
+        if (value != null && value.startsWith("#")) {
+            // A tag ingredient, addressed as `#ns:path`. Accepted only when the tag exists in the
+            // kind's own registry, so no patch can write a tag the game cannot resolve.
+            ResourceLocation tag = ResourceLocation.tryParse(value.substring(1));
+            if (tag == null) {
+                return false;
+            }
+            if (kind == IngredientKind.FLUID) {
+                return BuiltInRegistries.FLUID.getTag(net.minecraft.tags.TagKey.create(
+                        net.minecraft.core.registries.Registries.FLUID, tag)).isPresent();
+            }
+            if (kind == IngredientKind.CHEMICAL) {
+                // A Mekanism chemical has no tag form this editor writes.
+                return false;
+            }
+            return BuiltInRegistries.ITEM.getTag(net.minecraft.tags.TagKey.create(
+                    net.minecraft.core.registries.Registries.ITEM, tag)).isPresent();
+        }
         ResourceLocation id = ResourceLocation.tryParse(value);
         if (id == null) {
             return false;
@@ -1998,7 +2119,14 @@ public final class RecipeEditsApplier {
 
     private static JsonObject ingredientJson(EditorIngredient ingredient) {
         JsonObject json = new JsonObject();
-        json.addProperty("item", ingredient.itemId());
+        String id = ingredient.itemId();
+        if (id != null && id.startsWith("#")) {
+            // A tag ingredient: the vanilla serializers take `{"tag":"ns:path"}` in exactly the
+            // place an item takes `{"item":"ns:path"}`.
+            json.addProperty("tag", id.substring(1));
+            return json;
+        }
+        json.addProperty("item", id);
         return json;
     }
 

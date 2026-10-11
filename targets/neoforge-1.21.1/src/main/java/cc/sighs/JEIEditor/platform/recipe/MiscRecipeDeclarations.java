@@ -134,6 +134,35 @@ public final class MiscRecipeDeclarations {
                 ModdedRecipeAdapter.ItemJsonStyle.ITEM,
                 ModdedRecipeAdapter.ItemJsonStyle.ID));
 
+        // JEI page horsepowered:pressing ("Horse Press"), 1 input / 1 output.
+        // PressRecipe.getSerializer() returns HPRecipes.PRESSING_SERIALIZER, registered as
+        // DeferredRegister.create(RECIPE_SERIALIZER, "horsepowered").register("pressing", …).
+        // data/horsepowered/recipe/pressing/allium_to_dye.json - the item shape:
+        //   {"type":"horsepowered:pressing","ingredient":{"item":"minecraft:allium"},
+        //    "result":{"count":4,"id":"minecraft:magenta_dye"}}
+        // data/horsepowered/recipe/pressing/ice_to_water.json - the fluid shape:
+        //   {"type":"horsepowered:pressing","fluidResult":{"amount":1000,"id":"minecraft:water"},
+        //    "ingredient":{"item":"minecraft:ice"}}
+        // Of the 37 shipped files 27 write "result" and 10 write "fluidResult"; 3 of the
+        // latter also carry an "inputCount" that this declaration never names and therefore
+        // preserves. HorsePowerPressCategory.setRecipe:
+        //   addSlot(INPUT).addItemStacks(getIngredient().getItems())
+        //   if (hasFluidOutput()) addSlot(OUTPUT).addIngredient(FLUID_STACK, getFluidResult())
+        //   addSlot(OUTPUT).addItemStack(getResult())
+        // so OUTPUT ordinal 0 is "result" on one shape and "fluidResult" on the other. A
+        // single output field cannot name that: naming "result" leaves the ten fluid slots
+        // showing a kind the declaration does not name, which the client test reports as a
+        // declaration that can never edit them (and it is right - the server would refuse the
+        // patch). The ordered segment list is the mechanism for exactly this: the k-th OUTPUT
+        // slot is the k-th element of the concatenation of the fields the recipe actually
+        // carries, so each shape writes its own field and the declaration never guesses.
+        adapters.add(new ModdedRecipeDeclaration("horsepowered:pressing",
+                Arrays.asList("ingredient"), Arrays.asList("result", "fluidResult"),
+                ModdedRecipeAdapter.ItemJsonStyle.ITEM,
+                ModdedRecipeAdapter.ItemJsonStyle.ID)
+                .withFluidFields("fluidResult")
+                .withConcatenatedOutputs());
+
         // JEI page rackitup:drying ("晾干"), 1 input / 1 output.
         // The serializer is registered by MRecipes as
         // DeferredRegister.create(RECIPE_SERIALIZER, "rackitup").register("drying", …) and

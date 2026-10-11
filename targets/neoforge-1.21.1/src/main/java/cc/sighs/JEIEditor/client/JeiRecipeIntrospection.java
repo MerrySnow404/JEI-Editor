@@ -136,6 +136,18 @@ public final class JeiRecipeIntrospection {
     @SuppressWarnings("removal")
     private static ScreenPosition findSlotOffset(IRecipeLayoutDrawable<?> layout,
                                                   IRecipeSlotDrawable slot) {
+        // A slot that really is a direct child of the layout is placed by the layout's own
+        // origin: `IRecipeSlotDrawable.getRect()` is layout-relative, and JEI's own hit test
+        // agrees with that. Trusting the offset JEI reports for a probe point instead is
+        // wrong for a category whose layout carries a header: mekanism's activating page
+        // reports one that lands 42 px low, which paints the pending-slot highlight (and the
+        // edited amount) beside the slot rather than on it. Nested widgets fall through to
+        // the passes below, which are what the offset lookup exists for.
+        Rect2i origin = layout.getRect();
+        ScreenPosition layoutOrigin = new ScreenPosition(origin.getX(), origin.getY());
+        if (isSlotAt(layout, slot, layoutOrigin)) {
+            return layoutOrigin;
+        }
         Rect2i recipeArea = layout.getRect();
         Rect2i slotArea = slot.getRect();
         int centerX = recipeArea.getX() + slotArea.getX() + Math.max(0, slotArea.getWidth() / 2);

@@ -33,6 +33,7 @@ import mezz.jei.library.plugins.vanilla.cooking.fuel.FuelingRecipe;
 import mezz.jei.library.plugins.vanilla.anvil.AnvilRecipe;
 import mezz.jei.api.recipe.vanilla.IJeiAnvilRecipe;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.renderer.Rect2i;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -66,6 +67,17 @@ public final class JeiRecipeEditorPlugin implements IModPlugin {
     @Override
     public void registerGuiHandlers(IGuiHandlerRegistration registration) {
         registration.addGhostIngredientHandler(RecipesGui.class, new RecipeGhostHandler());
+    }
+
+    @Override
+    @SuppressWarnings("removal")
+    public void registerIngredients(mezz.jei.api.registration.IModIngredientRegistration registration) {
+        // Registered with no entries on purpose: JEI can only grow an index at runtime, and the
+        // tags are added when editing turns on and removed when it turns off, so they appear in
+        // the ingredient index only in editing mode. The 4-argument overload is the one JEI 19.44
+        // still supports without a codec (the codec overload is for ingredients that persist).
+        registration.register(TagIngredient.TYPE, java.util.Collections.<TagIngredient>emptyList(),
+                new TagIngredientHelper(), new TagIngredientRenderer());
     }
 
     static boolean clearInputAtMouse(RecipesGui gui, double mouseX, double mouseY) {
@@ -186,8 +198,38 @@ public final class JeiRecipeEditorPlugin implements IModPlugin {
                             screenArea.getX() + screenArea.getWidth(),
                             screenArea.getY() + screenArea.getHeight(), 0x662b6cff);
                 }
+                drawPatchedAmount(graphics, screenArea, patch, slotKey);
             }
         }
+    }
+
+    /**
+     * States the amount the patch will save, on the slot itself.
+     *
+     * <p>Needed for every kind whose displayed amount JEI cannot be told about: a chemical
+     * has no registered candidate carrying the edited amount, so JEI renders the registry
+     * default instead -- a number that is not the one being written. Item counts render
+     * correctly already, so this only covers the other kinds.
+     */
+    private static void drawPatchedAmount(GuiGraphics graphics, Rect2i area, RecipePatch patch,
+                                          String slotKey) {
+        String amount = SlotPatchFields.amount(patch.fields(), slotKey);
+        IngredientKind kind = SlotPatchFields.kindOf(patch.fields(), slotKey);
+        if (amount == null || amount.isEmpty() || kind == null || kind == IngredientKind.ITEM) {
+            return;
+        }
+        Font font = Minecraft.getInstance().font;
+        int width = font.width(amount);
+        int x = area.getX() + area.getWidth() - width;
+        int y = area.getY() + area.getHeight() - 8;
+        // Same z lift the editor's other own overlays use (the context menu and the drag
+        // icon): without it the fill and the text are not visible over JEI's recipe area.
+        com.mojang.blaze3d.vertex.PoseStack pose = graphics.pose();
+        pose.pushPose();
+        pose.translate(0.0D, 0.0D, 1000.0D);
+        graphics.fill(x - 1, y - 1, x + width + 1, y + 9, 0xE0202020);
+        graphics.drawString(font, amount, x, y, 0xFFFFD75E, false);
+        pose.popPose();
     }
 
     /** Rebuilds local JEI display overrides for every visible recipe with a
@@ -1048,8 +1090,7 @@ public final class JeiRecipeEditorPlugin implements IModPlugin {
             // fluid or a chemical becomes a target exactly like an item. A kind the
             // editor cannot address at all (an information or energy ingredient)
             // yields no targets instead of throwing.
-            cc.sighs.JEIEditor.editor.EditorIngredient dragged = RecipeAdapterSupport
-                    .editorIngredient(ingredient).orElse(null);
+            cc.sighs.JEIEditor.editor.EditorIngredient dragged = draggedIngredient(ingredient);
             if (!doStart || !ClientEditorState.isEditing() || dragged == null) {
                 return Collections.emptyList();
             }
@@ -1083,11 +1124,50 @@ public final class JeiRecipeEditorPlugin implements IModPlugin {
             return Collections.emptyList();
         }
 
+        /**
+         * The editor ingredient a dragged JEI ingredient stands for.
+         *
+         * <p>A tag needs its own branch: the tag type also offers its first member as a cheat
+         * stack, so the generic conversion would quietly turn a dragged tag into that member -
+         * the one thing the tag entry exists to avoid.
+         */
+        private static <I> cc.sighs.JEIEditor.editor.EditorIngredient draggedIngredient(
+                ITypedIngredient<I> ingredient) {
+            if (ingredient != null && ingredient.getIngredient() instanceof TagIngredient) {
+                TagIngredient tag = (TagIngredient) ingredient.getIngredient();
+                IngredientKind kind = tag.fluid() ? IngredientKind.FLUID : IngredientKind.ITEM;
+                // A fluid tag needs a volume; the smallest one is a placeholder that
+                // sizedForTarget replaces with the target slot's own amount.
+                return new cc.sighs.JEIEditor.editor.EditorIngredient(kind, tag.tagText(),
+                        kind == IngredientKind.ITEM ? 1 : kind.minAmount());
+            }
+            return RecipeAdapterSupport.editorIngredient(ingredient).orElse(null);
+        }
+
+        /**
+         * A fluid or chemical tag carries a placeholder volume, so the target slot's own amount is
+         * borrowed instead of inventing one - the recipe expected that amount before the edit.
+         */
+        private static cc.sighs.JEIEditor.editor.EditorIngredient sizedForTarget(
+                RecipeTarget target, cc.sighs.JEIEditor.editor.EditorIngredient ingredient) {
+            if (ingredient.kind() == IngredientKind.ITEM) {
+                return ingredient;
+            }
+            for (cc.sighs.JEIEditor.editor.EditorSlot slot : target.model.slots()) {
+                if (slot.key().equals(target.slotKey) && slot.ingredient() != null
+                        && slot.ingredient().kind() == ingredient.kind()) {
+                    return new cc.sighs.JEIEditor.editor.EditorIngredient(ingredient.kind(),
+                            ingredient.id(), slot.ingredient().amount());
+                }
+            }
+            return ingredient;
+        }
+
         private static void applyAtTarget(RecipeTarget target, cc.sighs.JEIEditor.editor.EditorIngredient ingredient) {
             try {
                 ClientEditorState.rememberTarget(target.model, target.slotKey, target.slots, target.recipe);
                 ClientEditorState.setPendingPatch(RecipeEditorAdapters.replaceSlot(
-                        target.model, target.slotKey, ingredient));
+                        target.model, target.slotKey, sizedForTarget(target, ingredient)));
                 ClientEditorState.setLastDrop("Placed " + ingredient.kind().id() + " " + ingredient.id()
                         + " in " + target.slotKey);
             } catch (IllegalArgumentException exception) {

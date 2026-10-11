@@ -97,3 +97,38 @@ Get-ChildItem *.jar.disabled | Rename-Item -NewName { $_.Name -replace '\.disabl
 编辑器的删除操作与"恢复可见"类模组（`jei-unhidden`）的优先级目前是**未定义的**——
 表现为后执行者赢。现在通过禁用规避了，但更彻底的做法是在编辑器侧记录"本会话主动隐藏的
 配方"，并在 JEI 重建后重新应用，而不是依赖执行顺序。这是代码改动，需要另行确认。
+
+## 已知不兼容：SilentGearJEI 1.1.9（尚未禁用，建议禁用或升级）
+
+**该附属会让 JEI 的 GUI 半边整体失效**，进而使编辑器在真实客户端里的界面功能（右键菜单、拖拽、
+`visibleLayouts`）完全无从发挥——而这不是编辑器的问题。
+
+证据（`javap` 对照 `run/mods/silentgearjei__silentgearjei-1.1.9.jar` 与
+`targets/neoforge-1.21.1/libs/jei-1.21.1-neoforge-19.44.0.403.jar`）：
+
+```text
+JEI   IListElementInfo:  abstract java.util.Collection<String> getModNames(mezz.jei.common.config.IIngredientFilterConfig);
+silentgearjei           TraitSearchableListElementInfo:        java.util.List<String> getModNames();
+```
+
+**同名但签名不同**（少一个 `IIngredientFilterConfig` 参数），即该附属是按更早版本的 JEI API 编译的。
+运行期 JVM 解析抽象方法 `getModNames(IIngredientFilterConfig)` 时找不到实现，抛出：
+
+```text
+Caught an error from mod plugin: ...NeoForgeGuiPlugin jei:neoforge_gui
+java.lang.AbstractMethodError: Receiver class
+  com.drowningfish233.silentgearjei.compat.jei.TraitSearchableListElementInfo
+  does not define or inherit an implementation of the resolved method ...
+  at mezz.jei.gui.startup.JeiGuiStarter.start(JeiGuiStarter.java:135)
+```
+
+`PluginCaller` 按插件捕获异常，于是 JEI 继续运行，但 `RuntimeRegistration` 构造函数里预置的
+dummy 不会被替换：`IngredientListOverlay` / `RecipesGui` / `BookmarkOverlay` / `IngredientFilterApi`
+全是 `*Dummy` 单例。此时 **JEI 的运行时是好的**（分类、物品、配方同步都正常），只有 GUI 是假的。
+
+双向验证过：把该附属从 run 的 classpath 过滤掉之后，同样环境里
+`RecipesGui` 是真对象、`showTypes([create:pressing])` 能打开且 `layoutHitCount=630`（命中真实配方）。
+详细原始证据见 `build/tmp/jei-sim/gui-probe.md`。
+
+**处理建议**：升级到与 JEI 19.44 匹配的版本；升级不可行时从 `run/mods` 移除。
+在此之前，任何在真实客户端里对编辑器**界面行为**的验证都不成立（自动化门禁走运行时 API，不受影响）。

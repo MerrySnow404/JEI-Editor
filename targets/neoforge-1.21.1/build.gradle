@@ -145,3 +145,43 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 apply from: file('../../gradle/target-conventions/publish.gradle')
+
+// ---------------------------------------------------------------------------
+// Development-only simulation run (AutoJS).
+//
+// Mirrors the normal client but additionally puts KubeJS and the AutoJS debug
+// MCP on the runtime classpath, in its own game directory, so the verified
+// "run/" environment stays untouched. KubeJS is normally disabled in run/mods
+// because it competes with the editor over JEI visibility - having it loaded is
+// a known variable of anything measured in this run.
+// See build/tmp/jei-sim/setup.md.
+sourceSets.create('sim')
+
+neoForge.addModdingDependenciesTo(sourceSets.sim)
+
+neoForge.runs.create('sim') {
+    client()
+    loadedMods.set([neoForge.mods.getByName(mod_id)])
+    sourceSet.set(sourceSets.sim)
+    gameDirectory.set(file('run-sim'))
+    programArguments.addAll('--username', 'SimPlayer')
+}
+
+dependencies {
+    simImplementation sourceSets.main.output
+    simImplementation project(':common')
+    simImplementation "cc.sighs.modrinthmirror:jei:${jei_modrinth_version}"
+
+    // The fixed test pack lives in the normal run's mods folder; this run has
+    // its own game directory, so it reads those jars from its classpath.
+    simRuntimeOnly fileTree('run/mods') { include '*.jar' }
+
+    // KubeJS is required by AutoJS (versionRange "[2101,)"; the disabled 377
+    // file satisfies it) and rhino, its own dependency, is already in the pack.
+    simRuntimeOnly files('run/mods/kubejs__kubejs-neoforge-2101.7.2-build.377.jar.disabled')
+    // AutoJS is a sibling checkout at D:\work\AutoJS: this project directory is
+    // targets/neoforge-1.21.1, so the sibling is three levels up. Gradle keeps a
+    // files() entry that does not exist without complaining, so a wrong depth
+    // here is silent - the client simply boots without the mod.
+    simRuntimeOnly files('../../../AutoJS/targets/neoforge-1.21.1/build/libs/AutoJS-neoforge-1.21.1-1.0.0.jar')
+}

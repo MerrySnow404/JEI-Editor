@@ -15,6 +15,8 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.RecipesUpdatedEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.ScreenEvent;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -24,6 +26,7 @@ import java.util.WeakHashMap;
 
 @EventBusSubscriber(modid = JEIEditorNeoForge121.MOD_ID, value = Dist.CLIENT)
 public final class ClientEditorEvents {
+    private static final Logger LOGGER = LoggerFactory.getLogger("JEI Editor Client");
     private static final int RECIPE_ID_INPUT_WIDTH = 110;
     private static final int RECIPE_ID_INPUT_HEIGHT = 14;
     private static final int MENU_WIDTH = 148;
@@ -303,6 +306,9 @@ public final class ClientEditorEvents {
         // callback. Restore synthetic pages on the next client task so JEI
         // cannot overwrite them again.
         JeiRecipeEditorPlugin.scheduleCreatedAnvilRestore();
+        // The rebuild also drops ingredients added at runtime, so the tag entries have to be
+        // applied again by the next sync.
+        TagIngredientRegistry.invalidate();
         if (ClientEditorState.isEditing()) {
             ClientEditorState.setLastDrop("Recipes synchronized from server");
         }
@@ -314,6 +320,9 @@ public final class ClientEditorEvents {
         // RecipesUpdatedEvent; doing it from the event callback is overwritten
         // by JEI's own lookup rebuild.
         JeiRecipeEditorPlugin.tickCreatedAnvilRestore();
+        // Same timing rule for the tag entries: they are added while editing is on and
+        // removed while it is off, checked once a tick so the switch cannot be missed.
+        TagIngredientRegistry.sync();
     }
 
     @SubscribeEvent
@@ -504,6 +513,7 @@ public final class ClientEditorEvents {
             items.add(new MenuItem("Save", () -> {
                 AnvilExperienceInputController.commitAll(screen);
                 if (ClientEditorState.getPendingPatches().isEmpty()) {
+                    LOGGER.info("Recipe save skipped: no pending recipe edit");
                     ClientEditorState.setLastDrop("No pending recipe edit");
                     return;
                 }
@@ -512,12 +522,15 @@ public final class ClientEditorEvents {
                     String error = ClientEditorState.renameCreationDraft(screen,
                             input == null ? "" : input.getValue());
                     if (!error.isEmpty()) {
+                        LOGGER.info("Recipe save skipped: {}", error);
                         ClientEditorState.setLastDrop(error);
                         return;
                     }
                 }
                 java.util.List<cc.sighs.JEIEditor.editor.RecipePatch> patches =
                         ClientEditorState.getPendingPatches();
+                LOGGER.info("Submitting {} pending recipe edit(s): {}", patches.size(),
+                        patches.stream().map(cc.sighs.JEIEditor.editor.RecipePatch::recipeId).toList());
                 ClientEditorState.markSaveSubmittedPatches(patches);
                 NeoForge121Network.send(patches);
                 ClientEditorState.setLastDrop("Recipe edits saved; reload separately to apply");

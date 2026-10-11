@@ -97,6 +97,10 @@ public final class NeoForge121Network {
                         .map(ResourceLocation::toString).orElse(patch.recipeId());
                 if (!RecipeEditorPolicy.load(server).canEdit(
                         (net.minecraft.server.level.ServerPlayer) context.player(), policyId)) {
+                    // Without this the whole reload just aborts on the client's status
+                    // line and the log stays empty.
+                    LOGGER.warn("Rejected recipe reload for {}: permission or namespace policy denied",
+                            patch.recipeId());
                     context.reply(RecipeEditResultPayload.failure("Permission or namespace policy denied", patch.recipeId()));
                     return;
                 }
@@ -111,15 +115,19 @@ public final class NeoForge121Network {
                 return;
             }
             if (!RecipeEditCoordinator.tryBegin(server)) {
+                // The coordinator debounces operations on the same server by 500 ms,
+                // so a Reload issued immediately after a save's reply lands here.
+                // Without this the reload just silently does nothing.
+                LOGGER.warn("Rejected recipe reload: another recipe operation finished less than 500 ms ago");
                 context.reply(RecipeEditResultPayload.failure("Another recipe operation is in progress", ""));
                 return;
             }
-            reloadSavedBatch(server, context, patches, 0);
+            reloadSavedBatch(server, context, patches, 0, new ArrayList<String>());
         });
     }
 
     private static void reloadSavedBatch(MinecraftServer server, IPayloadContext context,
-                                         List<RecipePatch> patches, int index) {
+                                         List<RecipePatch> patches, int index, List<String> failures) {
         if (index >= patches.size()) {
             RecipeEditCoordinator.finish(server);
             if (context.player() instanceof ServerPlayer player) {
@@ -128,20 +136,26 @@ public final class NeoForge121Network {
                 // that was written by an earlier session.
                 sendSavedRecipes(player);
             }
-            context.reply(RecipeEditResultPayload.success(
-                    "Reloaded " + patches.size() + " saved recipe edits", ""));
+            if (failures.isEmpty()) {
+                context.reply(RecipeEditResultPayload.success(
+                        "Reloaded " + patches.size() + " saved recipe edits", ""));
+            } else {
+                // A single stale or unreadable entry must not hide the edits
+                // that did reload: report which ids failed, but keep the rest.
+                context.reply(RecipeEditResultPayload.failure(
+                        "Reloaded " + (patches.size() - failures.size()) + " of " + patches.size()
+                                + " saved recipe edits; failed: " + String.join(", ", failures),
+                        failures.get(0)));
+            }
             return;
         }
         RecipePatch patch = patches.get(index);
         RecipeEditsApplier.reloadSaved(server, patch).whenComplete((ignored, error) -> server.execute(() -> {
             if (error != null) {
                 LOGGER.error("Failed to reload saved recipe edit for {}", patch.recipeId(), error);
-                RecipeEditCoordinator.finish(server);
-                context.reply(RecipeEditResultPayload.failure(
-                        "Recipe reload failed; check server log", patch.recipeId()));
-                return;
+                failures.add(patch.recipeId());
             }
-            reloadSavedBatch(server, context, patches, index + 1);
+            reloadSavedBatch(server, context, patches, index + 1, failures);
         }));
     }
 
@@ -205,6 +219,10 @@ public final class NeoForge121Network {
                     String validationError = validatePatch(server,
                             (net.minecraft.server.level.ServerPlayer) context.player(), patch);
                     if (validationError != null) {
+                        // The reply only reaches the editor's status line. Without
+                        // this the rejection is invisible in the log, which makes
+                        // "Save did nothing" impossible to diagnose.
+                        LOGGER.warn("Rejected recipe edit for {}: {}", patch.recipeId(), validationError);
                         context.reply(RecipeEditResultPayload.failure(validationError, patch.recipeId()));
                         return;
                     }
@@ -223,6 +241,19 @@ public final class NeoForge121Network {
                         "Invalid recipe edit payload: " + exception.getMessage(), ""));
             }
         });
+    }
+
+    /**
+     * Whether {@code declarationKey} names a declaration whose serializer is
+     * {@code serializerId}. A page-scoped declaration is found by its page uid
+     * (see {@link cc.sighs.JEIEditor.platform.recipe.ModdedRecipeAdapter#pageUid()}),
+     * so this is how a patch that names a page is matched back to the serializer the
+     * live recipe actually uses.
+     */
+    private static boolean declarationScopedToSerializer(String serializerId, String declarationKey) {
+        return cc.sighs.JEIEditor.platform.recipe.ModdedRecipeAdapters.forPage(serializerId, declarationKey)
+                .map(adapter -> serializerId.equals(adapter.serializerId()))
+                .orElse(Boolean.FALSE);
     }
 
     private static String validatePatch(MinecraftServer server, net.minecraft.server.level.ServerPlayer player,
@@ -265,7 +296,15 @@ public final class NeoForge121Network {
         }
         ResourceLocation serializerId = net.minecraft.core.registries.BuiltInRegistries.RECIPE_SERIALIZER
                 .getKey(holder.value().getSerializer());
-        if (serializerId == null || !serializerId.toString().equals(patch.serializerId())) {
+        if (serializerId == null) {
+            return "Recipe serializer mismatch";
+        }
+        if (!serializerId.toString().equals(patch.serializerId())
+                && !declarationScopedToSerializer(serializerId.toString(), patch.serializerId())) {
+            // A page-scoped declaration sends its scope key rather than the serializer:
+            // mekanism:rotary feeds two JEI pages whose slot roles differ, so each page
+            // carries its own declaration and the client names the page in the patch.
+            // Require only that the key it sent resolves to this same serializer.
             return "Recipe serializer mismatch";
         }
         return RecipeEditsApplier.canApply(server, patch)
@@ -293,13 +332,18 @@ public final class NeoForge121Network {
                         "Recipe save failed; change was not accepted", patch.recipeId()));
                 return;
             }
-            if (beforeModel != null || JeiVanillaRecipeEditorAdapter.isSyntheticPatch(patch)) {
-                data.put(patch, beforeModel);
-                data.audit(context.player().getName().getString(),
-                        RecipePatchSemantics.isDeletion(patch) ? "DELETE"
-                                : (RecipePatchSemantics.isCreation(patch) ? "CREATE" : "SAVE"),
-                        previous, patch);
-            }
+            // SavedData is what Reload iterates, so the patch itself must always be
+            // recorded. A null before-model only means there is no snapshot for Reset:
+            // RecipeEditorAdapters.createModel cannot model a declared modded
+            // serializer, so currentModel returns null for every one of them. Gating
+            // the store on beforeModel != null wrote the datapack file but kept the
+            // entry out of SavedData, so the edit looked saved and Reload could never
+            // apply it.
+            data.put(patch, beforeModel);
+            data.audit(context.player().getName().getString(),
+                    RecipePatchSemantics.isDeletion(patch) ? "DELETE"
+                            : (RecipePatchSemantics.isCreation(patch) ? "CREATE" : "SAVE"),
+                    previous, patch);
             LOGGER.info("Saved recipe edit for {}", patch.recipeId());
             saveRecipeBatch(server, context, patches, index + 1);
         }));

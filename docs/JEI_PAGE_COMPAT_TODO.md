@@ -218,7 +218,7 @@
 | `horsepowered:grinding` | 28 | 1 / 1 | Horse Grinding | declared |
 | `horsepowered:manual_chopping` | 25 | 17 / 1 | Manual Chopping | declared |
 | `horsepowered:manual_grinding` | 28 | 1 / 1 | Manual Grinding | declared |
-| `horsepowered:pressing` | 37 | 1 / 1 | Horse Pressing | todo |
+| `horsepowered:pressing` | 37 | 1 / 1 | Horse Pressing | declared |
 | `horsepowered:trapping` | 9 | 1 / 1 | Trapping | todo |
 
 **Just Enough Beacons Reforged**（`just_enough_beacons`）
@@ -427,7 +427,7 @@
 
 每页最多记录 3 个建模样本的完整槽位内容（`modelled_samples` 里 `{key=role:kind:id:amount;…}` 那段），服务端探针用例用它复现同一模型的 `base_fingerprint`（指纹哈希的就是`kind:id:amount`，所以流体槽位不会和同 id 同数量的物品槽位撞哈希）：`scripts/jei-declared-smoke.ps1` 只把声明页面的指纹当松弛值，未声明页面必须给出真实指纹，否则补丁会被当作过期改动拒绝。
 
-68 个已接入页面（清单里状态为 `done`/`declared` 的行）都要在客户端测试里至少建出一个模型；接入过程中实测发现的三类问题：
+69 个已接入页面（清单里状态为 `done`/`declared` 的行）都要在客户端测试里至少建出一个模型；接入过程中实测发现的三类问题：
 
 | 页面 | 现象 | 性质 |
 | --- | --- | --- |
@@ -481,7 +481,7 @@ vanilla 适配器只认自己实现的 serializer（`RecipeEditorAdapters.isImpl
 | 波次 | 范围 | 目标 | 状态 |
 | --- | --- | --- | --- |
 | W0 | 框架 | 声明式模组配方适配器（每模组一份声明 + 按 JEI 槽视图建模 + 原始 JSON 打补丁） | done |
-| W1 | A1 组 | A1 表 40 页，已声明 21 个、仍是 todo 19 个；另有 8 个非 RecipeHolder 页（B 组）也已声明。未声明页的成因有三类：serializer 本身就是 vanilla 或与别的模组共用（写回走 vanilla 适配器，不能再加声明，否则会顶掉 vanilla 页）；配方由模组在运行时生成、没有配方 JSON 可打补丁；网格或多输入数组形状。`immersiveengineering:sawmill` 与 `arc_furnace` 的多种输出形状已由「有序段列表」（`withConcatenatedOutputs`：按 JEI 类别的加槽顺序把单段/重复段拼接到配方 JSON 上，客户端只看槽数、服务端按 JSON 解析具体字段）接入；`mekanism:smelting` 显示的就是 vanilla `minecraft:smelting` 的配方本身，只是 id 被模组改写，因此按别名还原成真实配方后接入（见「运行时合成页面的真实来源」） | in_progress |
+| W1 | A1 组 | A1 表 40 页，已声明 21 个、仍是 todo 19 个；另有 9 个非 RecipeHolder 页（B 组）也已声明。未声明页的成因有三类：serializer 本身就是 vanilla 或与别的模组共用（写回走 vanilla 适配器，不能再加声明，否则会顶掉 vanilla 页）；配方由模组在运行时生成、没有配方 JSON 可打补丁；网格或多输入数组形状。`immersiveengineering:sawmill` 与 `arc_furnace` 的多种输出形状已由「有序段列表」（`withConcatenatedOutputs`：按 JEI 类别的加槽顺序把单段/重复段拼接到配方 JSON 上，客户端只看槽数、服务端按 JSON 解析具体字段）接入；`mekanism:smelting` 显示的就是 vanilla `minecraft:smelting` 的配方本身，只是 id 被模组改写，因此按别名还原成真实配方后接入（见「运行时合成页面的真实来源」） | in_progress |
 | W2 | A2 组 | 含流体/化学品的 36 页：声明 26 页、`gap` 2 页，其余 8 页仍只读——3 页（`create:automatic_brewing` / `draining` / `spout_filling`）的配方由模组在运行时合成、没有配方 JSON 可打补丁（`create:automatic_brewing` 与 `create:mixing` 共用 serializer，声明把它列为只读页，清单因此记 `gap`）；其余 IE 流体/网格页尚未声明。这三页的成因已由「运行时合成页面的真实来源」一节的实测坐实：它们的配方根本不在服务端的配方管理器里。原先被挡住的 `create:mixing` / `create:packing` 已由**配方推导的槽位序列**接入：它们的槽位顺序来自 `ItemHelper.condenseIngredients` 的合并与「物品槽在前、流体槽在后」的重排，字段列表推不出来，所以声明把这个推导本身写下来（见 A2 组说明里的第四条） | in_progress |
 | W3 | B 组 | 逐个确认哪些合成页有可落盘的数据来源，再做 33 页；候选调查见 `build/tmp/jei-synthetic-survey.md` | pending |
 | — | C 组 | 不接入 | n/a |

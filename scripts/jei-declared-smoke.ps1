@@ -987,6 +987,62 @@ $cases = @(
             'per_tick_usage' = $false
         }
         Absent = @('item_input.item', 'item_input.base.tag')
+    },
+    # Horse Powered's press writes a plain item pair, so this pins that the declaration
+    # added for the page (MiscRecipeDeclarations) lines up with the shipped file: the input
+    # is rewritten, the result and the untouched keys survive. The same serializer's fluid
+    # shape (fluidResult + inputCount) is deliberately not declared.
+    @{
+        Name = 'horsepowered:pressing'
+        RecipeId = 'horsepowered:pressing/allium_to_dye'
+        Serializer = 'horsepowered:pressing'
+        RecipePath = 'data\horsepowered\recipe\pressing\allium_to_dye.json'
+        Fields = '{"input.0.item":"minecraft:cornflower","input.0.count":"1"}'
+        Expect = @{
+            'type' = 'horsepowered:pressing'
+            'ingredient.item' = 'minecraft:cornflower'
+            'result.id' = 'minecraft:magenta_dye'
+            'result.count' = 4
+        }
+        Absent = @('ingredient.tag')
+    },
+    # The same page's fluid shape: OUTPUT ordinal 0 is "fluidResult" there, so the
+    # ordered segment list has to resolve that field and write the fluid into it, while
+    # the item "result" key must stay absent.
+    @{
+        Name = 'horsepowered:pressing (fluid shape)'
+        RecipeId = 'horsepowered:pressing/ice_to_water'
+        Serializer = 'horsepowered:pressing'
+        RecipePath = 'data\horsepowered\recipe\pressing\ice_to_water.json'
+        Fields = '{"input.0.item":"minecraft:packed_ice","input.0.count":"1","output.fluid":"minecraft:water","output.fluid_amount":"500"}'
+        Expect = @{
+            'type' = 'horsepowered:pressing'
+            'ingredient.item' = 'minecraft:packed_ice'
+            'fluidResult.id' = 'minecraft:water'
+            'fluidResult.amount' = 500
+        }
+        Absent = @('result', 'ingredient.tag')
+    },
+    # A tag written into an item slot. The client carries a tag as its own id with a
+    # leading '#' ('#ns:path'), which is how SlotPatchFields addresses a tag without a
+    # second field, so the declared writer has to turn that into the mod's own tag shape:
+    # '{"tag":"ns:path"}' and nothing else. An 'item' key holding '#ns:path', or a count
+    # sitting beside the tag, is a node the mods' codecs reject - the shipped Create files
+    # write the tag alone (this recipe's own ingredients[1] is {"tag":"minecraft:axes"}).
+    @{
+        Name = 'create:deploying (tag input)'
+        RecipeId = 'create:deploying/copper_grate_from_deoxidising'
+        Serializer = 'create:deploying'
+        RecipePath = 'data\create\recipe\deploying\copper_grate_from_deoxidising.json'
+        Fields = '{"input.0.item":"#c:ingots/copper","input.0.count":"1"}'
+        Expect = @{
+            'type' = 'create:deploying'
+            'ingredients.0.tag' = 'c:ingots/copper'
+            'ingredients.1.tag' = 'minecraft:axes'
+            'keep_held_item' = $true
+            'results.0.id' = 'minecraft:copper_grate'
+        }
+        Absent = @('ingredients.0.item', 'ingredients.0.count', 'ingredients.0.id')
     }
 )
 

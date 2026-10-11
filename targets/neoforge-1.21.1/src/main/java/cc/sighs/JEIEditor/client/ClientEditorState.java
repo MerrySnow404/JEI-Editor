@@ -392,6 +392,18 @@ public final class ClientEditorState {
      * an empty override.
      */
     private static boolean addPreview(IRecipeSlotDrawable drawable, EditorIngredient ingredient) {
+        if (TagIngredientRegistry.isTagId(ingredient.id())) {
+            // A tag cannot be resolved from the registry, so it shows its representative member.
+            // Without this the slot would render empty, which reads as "cleared" rather than
+            // "any of these".
+            Optional<ItemStack> representative =
+                    TagIngredientRegistry.representative(ingredient.kind(), ingredient.id());
+            if (!representative.isPresent()) {
+                return false;
+            }
+            drawable.createDisplayOverrides().addItemStack(representative.get());
+            return true;
+        }
         if (ingredient.isItem()) {
             ResourceLocation id = ResourceLocation.tryParse(ingredient.id());
             if (id == null || !BuiltInRegistries.ITEM.containsKey(id)) {
