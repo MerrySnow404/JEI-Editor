@@ -6,6 +6,7 @@ import cc.sighs.JEIEditor.editor.EditorModel;
 import cc.sighs.JEIEditor.editor.EditorSlot;
 import cc.sighs.JEIEditor.editor.IngredientKind;
 import cc.sighs.JEIEditor.editor.RecipePatch;
+import cc.sighs.JEIEditor.editor.TagPatchFields;
 import cc.sighs.JEIEditor.platform.recipe.CraftingRecipeEditorAdapter;
 import cc.sighs.JEIEditor.platform.recipe.DerivedSlotSequence;
 import cc.sighs.JEIEditor.platform.recipe.FuelRecipeEditorAdapter;
@@ -14,28 +15,36 @@ import cc.sighs.JEIEditor.platform.recipe.ModdedRecipeAdapters;
 import cc.sighs.JEIEditor.platform.recipe.ModdedRecipeModelSupport;
 import cc.sighs.JEIEditor.platform.recipe.RecipeAdapterSupport;
 import cc.sighs.JEIEditor.platform.recipe.RecipeEditorAdapters;
+import cc.sighs.JEIEditor.platform.recipe.TagEditorAdapter;
 import cc.sighs.JEIEditor.recipe.RecipeFieldMapping;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import mezz.jei.api.constants.VanillaTypes;
 import mezz.jei.api.gui.IRecipeLayoutDrawable;
 import mezz.jei.api.gui.ingredient.IRecipeSlotView;
 import mezz.jei.api.gui.ingredient.IRecipeSlotsView;
 import mezz.jei.api.ingredients.ITypedIngredient;
+import mezz.jei.api.neoforge.NeoForgeTypes;
 import mezz.jei.api.recipe.IFocusGroup;
 import mezz.jei.api.recipe.IRecipeManager;
 import mezz.jei.api.recipe.RecipeIngredientRole;
 import mezz.jei.api.recipe.category.IRecipeCategory;
 import mezz.jei.api.runtime.IJeiRuntime;
+import mezz.jei.library.plugins.jei.tags.ITagInfoRecipe;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.tags.TagKey;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.Recipe;
 import net.minecraft.world.item.crafting.RecipeHolder;
 import net.neoforged.fml.ModList;
+import net.neoforged.neoforge.fluids.FluidStack;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -58,7 +67,7 @@ import java.util.stream.Collectors;
  *       layout of a visible page;</li>
  *   <li>the model is built in the same order the client editor resolves a
  *       displayed recipe: fuel, JEI-generated vanilla page, declared mod
- *       recipe, then a plain {@link RecipeHolder};</li>
+ *       recipe, tag page, then a plain {@link RecipeHolder};</li>
  *   <li>the patch round trip goes through
  *       {@link RecipeEditorAdapters#replaceSlot}.</li>
  * </ul>
@@ -98,6 +107,15 @@ import java.util.stream.Collectors;
  *       {@code <slot>.fluid}/{@code .fluid_amount} or
  *       {@code <slot>.chemical}/{@code .chemical_amount} with the dragged id and
  *       amount, and an item slot must refuse a fluid drag the same way.</li>
+ *   <li><b>C for a tag page</b> ({@link PageResult#checkTagShape}): a tag page's
+ *       model is one slot holding the tag's first member, and its patches carry the
+ *       tag's own fields, so it is checked by its own branch rather than by the slot
+ *       round trip above. A drop on the slot must become a {@code member.add} of
+ *       exactly the dropped ingredient - the block it places on a block tag page,
+ *       which is the conversion that page needs - and the three context-menu
+ *       operations must produce a {@code member.remove}, a {@code tag.create} and a
+ *       {@code tag.delete} whose {@code tag.registry} agrees with the registry the
+ *       recipe id encodes.</li>
  * </ul>
  *
  * <p>A page that produces a model without being wired is reported, not failed:
@@ -267,6 +285,14 @@ public final class RecipePageClientTest {
         } catch (Throwable throwable) {
             page.errors.add("the declared model threw for serializer " + serializerId + ": " + describe(throwable));
         }
+        try {
+            Optional<EditorModel> tag = createTagModel(displayedRecipe, category);
+            if (tag.isPresent()) {
+                return Optional.of(new ModelResult(tag.get(), "tag"));
+            }
+        } catch (Throwable throwable) {
+            page.errors.add("the tag model threw: " + describe(throwable));
+        }
         if (!isHandled(category, displayedRecipe)) {
             return Optional.empty();
         }
@@ -283,6 +309,90 @@ public final class RecipePageClientTest {
             page.errors.add("the recipe-holder model threw: " + describe(throwable));
         }
         return Optional.empty();
+    }
+
+    /**
+     * The editor's tag-page branch, mirrored: {@code JeiRecipeEditorPlugin.createTagModel}.
+     *
+     * <p>A JEI tag page displays a bare {@code ITagInfoRecipe} - neither a
+     * {@code RecipeHolder} nor a {@code Recipe} - so no other route in this test can
+     * model it, and the checklist now counts the three tag pages as wired. The model is
+     * one slot holding the tag's first member, because a tag can hold more members than
+     * {@code EditorModel} accepts slots (1052 for {@code minecraft:item}) and a tag patch
+     * names one member at a time.
+     *
+     * <p>Mirrored rather than shared: the editor's own method is private to the plugin.
+     * What is asserted about the result, including its write path, is in
+     * {@code PageResult#checkTagShape}.
+     */
+    private static Optional<EditorModel> createTagModel(Object displayedRecipe, IRecipeCategory<?> category) {
+        String registry = tagRegistry(category);
+        if (registry == null || !(displayedRecipe instanceof ITagInfoRecipe)) {
+            return Optional.empty();
+        }
+        ITagInfoRecipe recipe = (ITagInfoRecipe) displayedRecipe;
+        Optional<EditorIngredient> member = firstTagMember(recipe, registry);
+        TagKey<?> tag = recipe.getTag();
+        if (!member.isPresent() || tag == null) {
+            return Optional.empty();
+        }
+        String recipeId = TagPatchFields.recipeId(registry, tag.location().toString());
+        List<EditorSlot> slots = java.util.Collections.<EditorSlot>singletonList(
+                new EditorSlot("input.0", "input", member.get()));
+        Map<String, String> properties = new TreeMap<String, String>();
+        properties.put("jei.input.0", "input.0");
+        return Optional.of(new EditorModel(recipeId, TagPatchFields.SERIALIZER,
+                RecipeAdapterSupport.fingerprint(recipeId, TagPatchFields.SERIALIZER, slots, properties),
+                slots, properties));
+    }
+
+    /**
+     * The registry a tag page belongs to, or null when the page is not one of the three
+     * registries a tag patch can write. JEI builds the uid as
+     * {@code <registry namespace>:tag_recipes/<registry path>}.
+     */
+    private static String tagRegistry(IRecipeCategory<?> category) {
+        if (category == null) {
+            return null;
+        }
+        ResourceLocation uid = category.getRecipeType().getUid();
+        if (uid == null || !"minecraft".equals(uid.getNamespace())) {
+            return null;
+        }
+        String prefix = "tag_recipes/";
+        if (!uid.getPath().startsWith(prefix)) {
+            return null;
+        }
+        String registry = uid.getPath().substring(prefix.length());
+        return TagPatchFields.isRegistry(registry) ? registry : null;
+    }
+
+    /** The tag's first member in the kind the page shows, as the editor models it. */
+    private static Optional<EditorIngredient> firstTagMember(ITagInfoRecipe recipe, String registry) {
+        List<ITypedIngredient<?>> members = recipe.getTypedIngredients();
+        if (members == null || members.isEmpty() || members.get(0) == null) {
+            return Optional.empty();
+        }
+        ITypedIngredient<?> first = members.get(0);
+        if (TagPatchFields.REGISTRY_FLUID.equals(registry)) {
+            Optional<FluidStack> stack = first.getIngredient(NeoForgeTypes.FLUID_STACK);
+            if (!stack.isPresent()) {
+                return Optional.empty();
+            }
+            ResourceLocation id = BuiltInRegistries.FLUID.getKey(stack.get().getFluid());
+            return id == null
+                    ? Optional.<EditorIngredient>empty()
+                    : Optional.of(new EditorIngredient(IngredientKind.FLUID, id.toString(),
+                            Math.max(IngredientKind.FLUID.minAmount(), stack.get().getAmount())));
+        }
+        Optional<ItemStack> stack = first.getIngredient(VanillaTypes.ITEM_STACK);
+        if (!stack.isPresent() || stack.get().isEmpty()) {
+            return Optional.empty();
+        }
+        ResourceLocation id = BuiltInRegistries.ITEM.getKey(stack.get().getItem());
+        return id == null
+                ? Optional.<EditorIngredient>empty()
+                : Optional.of(new EditorIngredient(id.toString(), Math.max(1, stack.get().getCount())));
     }
 
     /** Serializer of the held recipe, or null when the page is not a recipe record. */
@@ -579,6 +689,12 @@ public final class RecipePageClientTest {
                     checkDeclaredShape(result.model, declaration.get(), inputs, outputs, keys, slots,
                             loadedRecipe);
                 }
+            } else if ("tag".equals(result.route)) {
+                // A tag model has its own branch: its one slot cannot satisfy the
+                // per-slot round trip below, because a tag patch carries the tag's own
+                // fields (tag.op / tag.element) and never the slot's.
+                checkTagShape(result.model, keys, inputs, outputs);
+                return;
             }
             checkPatchRoundTrip(result.model, slots);
         }
@@ -1195,6 +1311,207 @@ public final class RecipePageClientTest {
                 expanded.add(patterns.get(repeatAt).replace("%d", Integer.toString(index - repeatAt)));
             }
             return expanded;
+        }
+
+        /**
+         * A tag page's model and its whole write path, which the per-slot checks below
+         * cannot cover.
+         *
+         * <p>A tag page is not a recipe page: its model is one slot holding the tag's
+         * first member, and every operation carries the tag's own fields
+         * ({@code tag.op} / {@code tag.registry} / {@code tag.element}) rather than the
+         * slot's {@code input.0.item}. Asserted here is the contract from the client side:
+         * one slot in the kind the page shows, a drop on it becoming a member-add of
+         * exactly the dropped ingredient (the block it places, on a block tag page), and
+         * the three menu operations naming the op and the tag the server reads them as.
+         */
+        private void checkTagShape(EditorModel model, List<String> keys, int inputs, int outputs) {
+            if (!TagPatchFields.SERIALIZER.equals(model.serializerId())) {
+                slotKeyIssues.add("the tag model of " + model.recipeId() + " carries serializer "
+                        + model.serializerId() + " instead of " + TagPatchFields.SERIALIZER);
+                return;
+            }
+            Optional<TagPatchFields.Target> target = TagPatchFields.target(model.recipeId());
+            if (!target.isPresent()) {
+                slotKeyIssues.add("the tag model of " + model.recipeId()
+                        + " does not decode to a registry and a tag id, so no patch can address it");
+                return;
+            }
+            String registry = target.get().registry();
+            String tagId = target.get().tagId();
+            if (inputs != 1 || outputs != 0 || !java.util.Collections.singletonList("input.0").equals(keys)) {
+                slotKeyIssues.add("the tag model of " + model.recipeId() + " has slots " + keys
+                        + " instead of the single input.0 slot a tag page can edit");
+                return;
+            }
+            String mapped = model.properties().get("jei.input.0");
+            if (!"input.0".equals(mapped)) {
+                slotKeyIssues.add("the tag model of " + model.recipeId() + " maps its visual input slot to "
+                        + mapped + " instead of input.0, so a drop on the page would resolve to no slot");
+            }
+            IngredientKind kind = TagPatchFields.REGISTRY_FLUID.equals(registry)
+                    ? IngredientKind.FLUID : IngredientKind.ITEM;
+            EditorSlot slot = model.slots().get(0);
+            if (!"input".equals(slot.role()) || slot.ingredient() == null) {
+                slotKeyIssues.add("the tag model of " + model.recipeId()
+                        + " leaves its input.0 slot empty, so a drag of a " + kind.id()
+                        + " has nothing to resolve");
+                return;
+            }
+            if (slot.ingredient().kind() != kind) {
+                slotKeyIssues.add("the tag model of " + model.recipeId() + " exposes input.0 as a "
+                        + slot.ingredient().kind().id() + " while the " + registry + " tag page shows "
+                        + kind.id() + "s");
+                return;
+            }
+            checkTagDrop(model, registry, tagId, kind);
+            checkTagMemberOps(model, registry, tagId);
+        }
+
+        /**
+         * The drop path. The ingredient dropped on the tag's slot has to become a
+         * member-add of that ingredient's own member id, and that id has to be the one the
+         * tag's registry holds - on a block page the block the dropped item places, which
+         * is what the server writes into the tag file. A drag the registry cannot hold is
+         * refused instead: another kind is not a member of that registry at all, and on a
+         * block page an item that places no block is not one either.
+         */
+        private void checkTagDrop(EditorModel model, String registry, String tagId, IngredientKind kind) {
+            String droppedId;
+            RecipePatch patch;
+            try {
+                if (kind == IngredientKind.FLUID) {
+                    EditorIngredient dropped = model.slots().get(0).ingredient();
+                    droppedId = dropped.id();
+                    patch = RecipeEditorAdapters.replaceSlot(model, "input.0", dropped);
+                } else {
+                    droppedId = STONE_ITEM;
+                    patch = RecipeEditorAdapters.replaceSlot(model, "input.0", new ItemStack(Items.STONE));
+                }
+            } catch (Throwable throwable) {
+                patchIssues.add("a " + kind.id() + " drop on the tag slot of " + model.recipeId()
+                        + " threw " + describe(throwable) + " instead of becoming a member-add");
+                return;
+            }
+            checkTagPatch(model, Optional.of(patch), TagPatchFields.OP_MEMBER_ADD, registry, tagId,
+                    tagElement(registry, droppedId), "a " + kind.id() + " drop on the tag slot");
+            if (kind == IngredientKind.FLUID) {
+                expectRefusal(model, "input.0", new ItemStack(Items.STONE),
+                        "the fluid tag slot of " + model.recipeId() + " accepted an item");
+            } else {
+                expectRefusal(model, "input.0",
+                        new EditorIngredient(IngredientKind.FLUID, "minecraft:water", 1000),
+                        "the item tag slot of " + model.recipeId() + " accepted a fluid");
+            }
+            if (TagPatchFields.REGISTRY_BLOCK.equals(registry)) {
+                expectTagElementRefusal(model, new ItemStack(Items.STICK),
+                        "the block tag slot of " + model.recipeId()
+                                + " accepted an item that places no block");
+            }
+        }
+
+        /** A drag whose member the registry cannot hold must be refused, not staged. */
+        private void expectTagElementRefusal(EditorModel model, ItemStack stack, String what) {
+            try {
+                RecipePatch patch = RecipeEditorAdapters.replaceSlot(model, "input.0", stack);
+                patchIssues.add(what + " instead of refusing it (fields " + patch.fields() + ")");
+            } catch (IllegalArgumentException expected) {
+                // Refused, as intended.
+            } catch (Throwable throwable) {
+                patchIssues.add(what + " threw " + describe(throwable)
+                        + " instead of an IllegalArgumentException");
+            }
+        }
+
+        /**
+         * The three operations the page's context menu offers. The member-remove is seeded
+         * with the member the page shows and the tag-create with the same one, both through
+         * the ids JEI gave the page rather than through a re-derivation.
+         */
+        private void checkTagMemberOps(EditorModel model, String registry, String tagId) {
+            String memberId = model.slots().get(0).ingredient().id();
+            String element = tagElement(registry, memberId);
+            if (element == null) {
+                slotKeyIssues.add("the tag model of " + model.recipeId() + " holds " + memberId
+                        + ", which is not a member of a " + registry + " tag the editor could address");
+                return;
+            }
+            checkTagPatch(model, TagEditorAdapter.removeMember(model, memberId),
+                    TagPatchFields.OP_MEMBER_REMOVE, registry, tagId, element,
+                    "removing the member the page shows");
+            checkTagPatch(model, TagEditorAdapter.createTag(model, memberId),
+                    TagPatchFields.OP_CREATE, registry, tagId, element,
+                    "creating a tag from the member the page shows");
+            checkTagPatch(model, TagEditorAdapter.deleteTag(model),
+                    TagPatchFields.OP_DELETE, registry, tagId, null, "deleting the tag");
+        }
+
+        /**
+         * One tag operation's patch: the op the server reads, the registry field it checks
+         * against the id, the member it names, and the tag it addresses. Both carriers of
+         * the registry have to agree, because the id decides the file the applier writes
+         * while the field decides the live registry it reads the members from - and a
+         * create patch's id is what the page bar's typed tag name rewrites.
+         */
+        private void checkTagPatch(EditorModel model, Optional<RecipePatch> produced, String op,
+                                   String registry, String tagId, String element, String what) {
+            if (produced == null || !produced.isPresent()) {
+                patchIssues.add(what + " on the tag page " + model.recipeId()
+                        + " produced no patch, so that operation cannot be made from the page");
+                return;
+            }
+            RecipePatch patch = produced.get();
+            if (!TagPatchFields.SERIALIZER.equals(patch.serializerId())) {
+                patchIssues.add(what + " on the tag page " + model.recipeId() + " produced serializer "
+                        + patch.serializerId() + " instead of " + TagPatchFields.SERIALIZER);
+                return;
+            }
+            if (!model.recipeId().equals(patch.recipeId())) {
+                patchIssues.add(what + " on the tag page " + model.recipeId()
+                        + " produced a patch addressed to " + patch.recipeId());
+            }
+            if (!op.equals(TagPatchFields.op(patch))) {
+                patchIssues.add(what + " on the tag page " + model.recipeId() + " produced tag.op="
+                        + TagPatchFields.op(patch) + " instead of " + op);
+            }
+            String writtenRegistry = patch.fields().get(TagPatchFields.REGISTRY_FIELD);
+            if (!registry.equals(writtenRegistry)) {
+                patchIssues.add(what + " on the tag page " + model.recipeId() + " produced "
+                        + TagPatchFields.REGISTRY_FIELD + "=" + writtenRegistry + " instead of " + registry);
+            }
+            String writtenElement = TagPatchFields.element(patch);
+            if (element == null ? writtenElement != null : !element.equals(writtenElement)) {
+                patchIssues.add(what + " on the tag page " + model.recipeId() + " produced "
+                        + TagPatchFields.ELEMENT_FIELD + "=" + writtenElement + " instead of " + element);
+            }
+            Optional<TagPatchFields.Target> decoded = TagPatchFields.target(patch);
+            if (!decoded.isPresent() || !registry.equals(decoded.get().registry())
+                    || (tagId != null && !tagId.equals(decoded.get().tagId()))) {
+                patchIssues.add(what + " on the tag page " + model.recipeId()
+                        + " produced a patch decoding to " + (decoded.isPresent()
+                                ? decoded.get().registry() + " / " + decoded.get().tagId() : "no target")
+                        + " instead of " + registry + " / " + tagId);
+            }
+        }
+
+        /**
+         * The member id the tag file has to receive for an ingredient, derived here rather
+         * than taken from the adapter: a block tag holds block ids, so the item a block tag
+         * page shows - and the only thing a drag can carry - has to resolve to the block it
+         * places. Every other registry takes the ingredient's own id. Null means the
+         * ingredient is not a member that registry could hold.
+         */
+        private static String tagElement(String registry, String ingredientId) {
+            if (!TagPatchFields.REGISTRY_BLOCK.equals(registry)) {
+                return ingredientId;
+            }
+            ResourceLocation itemKey = ResourceLocation.tryParse(ingredientId);
+            Item item = itemKey == null ? null : BuiltInRegistries.ITEM.get(itemKey);
+            if (!(item instanceof BlockItem)) {
+                return null;
+            }
+            ResourceLocation blockKey = BuiltInRegistries.BLOCK.getKey(((BlockItem) item).getBlock());
+            return blockKey == null ? null : blockKey.toString();
         }
 
         /**

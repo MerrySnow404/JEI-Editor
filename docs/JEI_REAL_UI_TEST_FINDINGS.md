@@ -1025,7 +1025,7 @@ the derived model of create:empty_mekanism_creative_fluid_tank_of_mekanism_brine
 
 ## 十八、清单收尾：`todo` 只剩三个"需要新机制"的页面
 
-* 三个 `minecraft:tag_recipes/*`（1052 / 575 / 45）从 `todo` 改成 `gap`：它们根本不是配方页，只是列出标签成员；客户端测试本来就有一张"已知不支持"名单单独断言它们零模型。现在两张名单一致（同一页被断言两次"零模型"，无害），脚本里那句"文档里仍是 todo"的注释也同步改掉了，理由写进 `NOT_COVERED_UIDS` 的注释。
+* 三个 `minecraft:tag_recipes/*`（1052 / 575 / 45）从 `todo` 改成 `gap`：它们根本不是配方页，只是列出标签成员；客户端测试本来就有一张"已知不支持"名单单独断言它们零模型。现在两张名单一致（同一页被断言两次"零模型"，无害），脚本里那句"文档里仍是 todo"的注释也同步改掉了，理由写进 `NOT_COVERED_UIDS` 的注释。（**这条已在 §二十二 反转**：标签本身是可编辑的——增删标签成员 + 创建/删除标签，走 `jeieditor:tag` 补丁种类；那两张名单里的三页都已移到「已接入」。）
 * 路线图同步：**W3**（B 组普查）改成"33 页已逐页判定"（14 已声明 / 18 记 `gap` / 1 待机制），并新增 **W4「新机制」** 行，把三个页面的障碍写清楚：`cobblemon:campfire_pot_recipe`(118) 与 `create:draining`(80，已试接并按 57 条实测失败回退) 需要「槽位不可寻址 / 无字段槽位」的表达能力；`create:mechanical_crafting`(4) 的 `pattern` 格子共享 `key` 字母、`create:sequenced_assembly`(3) 每一步都要独立路径序列，都需要先定语义（按字母寻址并写明连带修改，或拒绝该页）。
 * 结果：`todo` 从 6 行降到 **3 行**，且每一行都指着一个明确的机制缺口；`gap` 31 行，理由都在生成器里、并被门禁按"零模型"断言着。
 
@@ -1172,3 +1172,73 @@ the derived model of create:empty_mekanism_creative_fluid_tank_of_mekanism_brine
 
 **本轮门禁数字**：**188 页**、**2170 个模型**（2167→2170，+3）、**91 页 wired**（90→91）、31 页 `gap`、
 3 页已知不支持、0 失败；unit 59 条；declared-smoke **56 条 + 22 条探针**。
+
+## 二十二、JEI 标签页接入：标签内增删成员 + 标签的创建/删除
+
+**页面形状，以及为什么不能走「声明」**：一个标签页就是一个标签，绘制的是**一个 INPUT 槽装着全部成员**（JEI 的
+`TagInfoRecipeCategory.setRecipe` 把 `getTypedIngredients()` 全塞进那一个槽）+ **每个成员一个 OUTPUT 槽**
+（7 列 × 5 行可视、可滚）。本包物品/方块/流体标签分别 1052 / 575 / 45 个，最大的标签有 1052 个成员，而
+`EditorModel` 最多 128 槽——「一成员一槽」的模型既建不出来也不是编辑需要的形状：编辑的对象是**标签整体**。
+模型因此只有**一个槽**（`input.0`，持有该标签第一个成员），它存在只为让页面有模型身份和拖拽目标。这也是
+三个标签页不能像别的页面那样写一条 `ModdedRecipeDeclaration` 的原因：声明按 JEI 槽视图一槽一建模。
+
+**补丁种类**：`serializerId = jeieditor:tag`，`recipeId = jeieditor:tag/<item|block|fluid>/<标签命名空间>/<标签路径>`
+（`TagPatchFields`）。**注册表进 id 是必须的**：同一个标签 id 可以同时是物品标签和方块标签
+（`minecraft:planks` 两者皆有），而 import bundle 与世界 SavedData 都按 `recipeId` 作键，只写标签 id 会让两者
+互相覆盖。字段：`tag.op` ∈ `member.add` / `member.remove` / `tag.create` / `tag.delete`、`tag.registry`、
+`tag.element`（方块标签这里要的是**方块** id）。
+
+**写回语义：整份快照 + `"replace": true`**。标签文件在多个 pack 之间是**合并**的（这也是模组能给原版标签
+追加成员的方式），所以「只追加一条」无法表达删除，也说不清「标签当前到底有哪些成员」。写成
+`data/<标签命名空间>/tags/<注册表>/<路径>.json` = `{"values":[全量成员],"replace":true}`，编辑器这个 pack
+从此刻起拥有该标签，四种操作都落到同一份快照上：
+* `member.add` = 现有成员 + 追加一条（已存在就拒绝）、`member.remove` = 减去一条（没有就拒绝）；
+* `tag.create` = 只有一个成员的标签（已存在实质成员就拒绝）；
+* `tag.delete` = `{"values":[],"replace":true}` —— 这是「删除一个模组 jar 定义的标签」唯一可行的做法：跑着的
+  服务器移不掉别的 pack 的文件，而空标签会同时从 JEI 的标签页（`TagInfoRecipeMaker` 只对非空成员表发页）
+  和编辑器的标签索引里消失。目录取加载器自己的 `Registries.tagsDirPath(...)` 而不是硬编码 `tags/item`。
+
+**为什么标签补丁必须整包 reload**：配方编辑是把单条塞回活着的 `RecipeManager`；标签没有对应物——服务器的
+`TagManager` 没有公开访问器，`Registry.getTag` 只回答上一次资源 reload 绑定的那张表，所以标签补丁走
+`server.reloadResources(选中的 pack)`，并把它作为 future 交回调用方（`TagEditApplier`）。代价要说清楚：它比一次
+配方编辑重得多，一个 import 里放多个标签补丁就会触发多次整包 reload。
+
+**拒绝面**（全部在写前闸门，写不落盘）：元素不属于该注册表（会让加载器下次 reload 时整份文件作废、连带把该
+标签的其他成员一起弄没）、加一条已经在标签里的、删一条标签里没有的、create 一个已经存在的、delete 一个已经
+没有成员的。
+
+**客户端四个手势**：① 拖一个原料到标签页的**标签槽** = 加成员（走既有 ghost 拖拽与 `replaceSlot` 路径，
+`RecipeEditorAdapters` 里多一条 tag 分支）；② 右键**成员格** = `Remove <id> From Tag` 与
+`New Tag From This Element...`（后者暂存 `tag.create` 并复用既有的 recipe id 输入框，命名空间强制
+`jeieditor`，与新建配方一致）；③ 右键**标签槽** = `Delete Tag`。槽位命中复用 JEI 自己的
+`getSlotUnderMouse` + 编辑器既有的槽键映射（`RecipeGhostHandler.slotKey`），没有第二套命中测试。
+方块页有个要说明的坑：JEI 画的是方块的**物品**，而标签里存的是**方块 id**，所以拖进来的东西必须能变成方块
+（`BlockItem`），否则拒绝；拖拽高亮仍会亮起，落下时在状态栏给出原因。
+
+这三个手势里只有①的补丁构造被客户端测试断言；②③与新建标签的 id 输入是 UI 局部逻辑，自动化门禁测不到
+（客户端测试不驱动鼠标，只有门禁三段），只由代码审查覆盖——`AGENT.md` 里也写明了这一点。
+
+**清单反转**：三个标签页原先在 `scripts/jei-client-tests.ps1` 的「已知不支持」名单和 `gen_checklist.py` 的
+`NOT_COVERED_UIDS` 里，按「必须零模型」被断言，理由写的是「不是配方、没有可写的配方编辑，这是终态而不是缺口」。
+现在它们是**已接入**：新增 `TAG_PAGE_UIDS`（`done`），客户端测试的 94 页里包含它们（三页都是 40/40 建模，
+模型形状 `input.0`），并新增 `checkTag*` 断言钉住：模型恰好一槽、拖拽产出的补丁是 `member.add` 且**方块页的
+元素是方块 id**（测试自己经 `BuiltInRegistries.BLOCK` 独立算，不读适配器）、四种 op 的补丁形状、以及
+`TagPatchFields.target` 能把补丁回解成同一个注册表 + 标签 id。
+
+**smoke 证据**（7 条新探针）：
+* 一条自建标签的**生命周期**：create → 加第二条 → 删第一条 → delete，四条断言的文件依次是
+  `{"values":["minecraft:iron_ingot"],...}`、`{"values":["minecraft:iron_ingot","minecraft:gold_ingot"],...}`、
+  `{"values":["minecraft:gold_ingot"],...}`、`{"values":[],...}`，`replace` 始终为 `true`；
+* 一条追加到 **vanilla** 标签：往 `minecraft:water` 加 `minecraft:lava` 写出
+  `{"values":["minecraft:water","minecraft:flowing_water","minecraft:lava"],"replace":true}` —— 证明快照会带上
+  别的 pack 已有的成员，而不是用用户新加的那一条顶掉它们；
+* 两条拒绝：元素无注册表、delete 一个已经没有成员的标签，都是 `Import failed: stale or unsupported patch` 且不落盘。
+
+**工装顺带改的一处**：`probe after reload` 段会逐条重断言写回探针的文件，而 create→add→remove→delete 是**同一条
+标签**的链式步骤、后面的步骤故意改写同一个文件。新增探针键 `LaterStep` 显式声明「这条的文件会被后来的探针改写」，
+链式步骤因此只在各自导入后被断言；最后一步不带该键，所以文件仍然有 after-reload 的证明。两条拒绝探针也改成
+各自独立的标签 id——探针导入前会删掉自己的目标文件，指向链式步骤的文件会把那条的产物一块删掉。
+
+**本轮门禁数字**：unit **68 条**；客户端 **188 页 / 2290 个模型**（2170→2290，+120）、**94 页 wired**
+（91→94）、28 页 `gap`（31→28）、**0 页已知不支持**（3→0）、0 失败；declared-smoke **56 用例 + 29 探针**
+（22→29）。

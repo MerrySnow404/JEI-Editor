@@ -75,8 +75,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\jei-verify.ps1
 
 两个 harness 需要 `targets/neoforge-1.21.1/run/mods/` 下的测试模组包（68 个启用 jar + 8 个禁用）。
 装配该包的工具已移入 `scripts/jei-mod-env/`，用法、可复用脚本与一次性历史步骤见该目录的
-`README.md`；`run/mods` 与 `build/tmp/modsearch/` 都不入库，因此新 clone 需要先按该 README 重建，
-该 README 同时列出 76 个文件的完整清单（68 启用 + 8 禁用）与逐步命令，并说明为什么
+`README.md`；`run/mods` 与 `build/tmp/modsearch/` 都不入库，因此新 clone 需要先按该 README 重建——
+现在有一条命令：`python scripts/jei-mod-env/download_pack.py`（按入库的 `pack-manifest.json` 只下缺的文件、
+按 sha1 校验），随后 `python scripts/jei-mod-env/verify.py` 看第一行是不是 `jars: 68`（它最后一定会把 `jei`
+报成缺失前置并以非零码退出，这是正常的：JEI 由构建 classpath 提供，不在这个包里）。该 README 同时列出 76 个
+文件的完整清单（68 启用 + 8 禁用）与逐步命令，清单与 manifest 由
+`build_pack_manifest.py` 交叉校验；它并说明为什么
 `prune.py` 的 `report.json` 在入库文件里没有生产者（诚实缺口，不伪造）。
 排查 harness 失败前先确认包里模组齐全，不要把环境缺失误判成页面回归。
 
@@ -150,7 +154,8 @@ mod metadata 在 `src/clientTest/resources/META-INF/neoforge.mods.toml`）。它
   `mekanism:sawing` 这类按配方可选的第二输出槽）必须抛 `IllegalArgumentException` 拒绝，合成网格的空格子
   必须能填进去，其余页面允许「填进去」或「干净拒绝」二选一（不接受别的 throwable，也不接受键不对的补丁）；
   燃料条目（`neoforge:furnace_fuel`）的 `input.0` 是它的身份（生成的配方 id 里编码了这个物品），
-  物品替换同样必须拒绝，只有燃烧时间可编辑；
+  物品替换同样必须拒绝，只有燃烧时间可编辑；标签页是这条槽位规则的例外——它的补丁带 `tag.*` 字段而不是
+  槽位前缀，由客户端测试的标签分支单独断言（见上面 `minecraft:tag_recipes/*` 那条）；
 - 清单里状态为 `gap` 的页面必须**一个模型都不产生**（一旦产生说明有人修好了该页，需更新清单；
   与已声明页面共用 serializer 的页面由声明里的只读页面名单保持只读，例如 `immersiveengineering:arc_recycling`）；
 - 页面显示的配方可能不是管理器里那条配方的 id：`mekanism:smelting` 由 `MekanismRecipeType` 从 vanilla
@@ -158,8 +163,17 @@ mod metadata 在 `src/clientTest/resources/META-INF/neoforge.mods.toml`）。它
   `/mekanism_generated/`）。`RecipeViewerAliases` 记下这种页面的 id 规则（页面 uid → 前缀），编辑器与测试模组
   都经 `JeiRecipeIntrospection.aliasedRecipeHolder` 按它还原出真实配方 id，再走那条配方自己的 serializer
   建模与写回（补丁携带真实 id 与 `minecraft:smelting`），所以这一页的模型是 `recipe-holder` 路线而不是声明路线；
-- `minecraft:tag_recipes/{item,block,fluid}` 由脚本内的锁定列表按同样方式断言（JEI 直接推 `TagInfoRecipe`，
-  编辑器所有路径都不认；标签页显示的是标签成员列表而不是配方记录，没有可写的配方编辑，因此这是终态而不是缺口）；
+- `minecraft:tag_recipes/{item,block,fluid}` 已接入，走的是**标签补丁**而不是配方补丁：JEI 直接推
+  `TagInfoRecipe`（一个标签的成员列表，既不是 `RecipeHolder` 也不是 `Recipe`），编辑器把它建模成
+  **一个** `input.0` 槽（放着该标签的第一个成员）并改写标签本身——一个标签可以有 1052 个成员而
+  `EditorModel` 最多 128 个槽，且每次操作只命名一个成员，所以「一成员一槽」既建不出来也用不上。
+  每次操作走 `jeieditor:tag` 补丁（`tag.op` 为 `member.add`/`member.remove`/`tag.create`/`tag.delete`），
+  配方 id 编码了注册表与标签 id（`TagPatchFields.recipeId`，因为 `minecraft:planks` 同时是物品标签和方块标签）；
+  方块标签的成员是方块 id，而页面显示、拖放能带上的只有物品，所以落进方块标签的原料要经 `BlockItem#getBlock`
+  换回它放置的方块，放不出方块的物品被拒。这三页在清单里是 `done`，由客户端测试的标签分支按
+  「每页至少一个模型 + 一条 `member.add`/`member.remove`/`tag.create`/`tag.delete` 补丁」断言；
+  右键菜单的三个手势（在成员槽上删成员 / 由该成员建标签、在标签槽上删标签）走的是同一批适配器方法，
+  但客户端测试不驱动鼠标，因此只由代码审查覆盖；
 - 编辑器能建模但不在清单里的页面会被列出（说明匹配了没打算接入的页面），不算失败。
 
 vanilla 适配器只对**自己真正实现**的 serializer 建模与改写，按 serializer id 而不是配方类匹配：
@@ -179,7 +193,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\jei-client-tests.ps1
 脚本从 `docs/JEI_PAGE_COMPAT_TODO.md` 解析：状态 `done`/`declared` 的行进入已接入清单，`gap` 的行进入零模型断言
 （`build\client-test\wired-pages.txt` 只写已接入页面）。随后启动 `runClientTest`，等 `build\client-test\report.json`
 出现后结束客户端进程，再根据报告打印逐页表格（`gap` / `KNOWN UNSUPPORTED` / `NOT WIRED` 各有标注）。
-客户端内断言失败或 `gap`/锁定页面产生了模型时脚本退出码为 1；`docs/**` 的变更由人工维护，脚本只读它。
+客户端内断言失败或 `gap` 页面产生了模型时脚本退出码为 1。脚本里还留着一份「已知不可用」的锁定名单
+（`$knownUnsupported`，与 `gap` 一样要求零模型），现在是空的——三个标签页接入标签补丁后由清单按 `done`
+读入；`docs/**` 的变更由人工维护，脚本只读它。
 
 测试模组进的是一个一次性世界，「在关卡里 + 无界面」会让游戏抓取光标并把它居中、限制在窗口内——
 操作者的鼠标会被抢走。所以 `JeiEditorClientTests` 在每个 `ClientTickEvent.Post` 里（含报告写完之后）

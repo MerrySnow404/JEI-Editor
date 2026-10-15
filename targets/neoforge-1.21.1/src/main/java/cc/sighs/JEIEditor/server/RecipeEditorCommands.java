@@ -3,6 +3,7 @@ package cc.sighs.JEIEditor.server;
 import cc.sighs.JEIEditor.editor.RecipeEditBundle;
 import cc.sighs.JEIEditor.editor.RecipeEditBundleCodec;
 import cc.sighs.JEIEditor.editor.RecipePatch;
+import cc.sighs.JEIEditor.editor.TagPatchFields;
 import cc.sighs.JEIEditor.platform.recipe.FuelRecipeEditorAdapter;
 import cc.sighs.JEIEditor.platform.recipe.RecipeEditorAdapters;
 import com.mojang.brigadier.arguments.StringArgumentType;
@@ -43,11 +44,17 @@ public final class RecipeEditorCommands {
             Path file = filePath(server, name); if (Files.notExists(file) || Files.size(file) > MAX_FILE_BYTES) throw new IOException("file is missing or too large");
             List<RecipePatch> patches = RecipeEditBundleCodec.decode(new String(Files.readAllBytes(file), StandardCharsets.UTF_8)).patches();
             for (RecipePatch patch : patches) {
-                String policyId = FuelRecipeEditorAdapter.itemId(patch).map(ResourceLocation::toString)
+                // A tag patch is policed by its tag id and has no recipe holder to
+                // find, exactly as a fuel patch is policed by its item id: the
+                // encoded recipe id names this mod's namespace, not the namespace of
+                // the tag that is actually being changed.
+                String policyId = TagPatchFields.isTagPatch(patch)
+                        ? TagPatchFields.policyId(patch)
+                        : FuelRecipeEditorAdapter.itemId(patch).map(ResourceLocation::toString)
                         .orElse(patch.recipeId());
                 if (!RecipeEditorPolicy.load(server).canEdit(source, policyId)) throw new IOException("permission or namespace policy denied: " + patch.recipeId());
                 ResourceLocation id = ResourceLocation.tryParse(patch.recipeId()); RecipeHolder<?> holder = id == null ? null : server.getRecipeManager().byKey(id).orElse(null);
-                if ((!FuelRecipeEditorAdapter.isFuelPatch(patch)
+                if ((!FuelRecipeEditorAdapter.isFuelPatch(patch) && !TagPatchFields.isTagPatch(patch)
                         && (holder == null && !(cc.sighs.JEIEditor.editor.RecipePatchSemantics.isDeletion(patch)
                         || cc.sighs.JEIEditor.editor.RecipePatchSemantics.isCreation(patch))
                         || (holder != null && !cc.sighs.JEIEditor.editor.RecipePatchSemantics.isDeletion(patch)

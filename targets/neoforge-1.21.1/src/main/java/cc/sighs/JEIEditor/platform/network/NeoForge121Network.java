@@ -4,6 +4,7 @@ import cc.sighs.JEIEditor.editor.RecipePatch;
 import cc.sighs.JEIEditor.editor.RecipeEditBundle;
 import cc.sighs.JEIEditor.editor.RecipeEditPayloadRules;
 import cc.sighs.JEIEditor.editor.RecipePatchSemantics;
+import cc.sighs.JEIEditor.editor.TagPatchFields;
 import cc.sighs.JEIEditor.JEIEditorNeoForge121;
 import cc.sighs.JEIEditor.client.ClientEditorState;
 import cc.sighs.JEIEditor.server.RecipeEditCoordinator;
@@ -258,6 +259,13 @@ public final class NeoForge121Network {
 
     private static String validatePatch(MinecraftServer server, net.minecraft.server.level.ServerPlayer player,
                                         RecipePatch patch) {
+        if (TagPatchFields.isTagPatch(patch)) {
+            if (!RecipeEditorPolicy.load(server).canEdit(player, TagPatchFields.policyId(patch))) {
+                return "Permission or namespace policy denied";
+            }
+            return RecipeEditsApplier.canApply(server, patch)
+                    ? null : "Tag patch is stale or unsupported";
+        }
         if (FuelRecipeEditorAdapter.isFuelPatch(patch)) {
             String policyId = FuelRecipeEditorAdapter.itemId(patch)
                     .map(ResourceLocation::toString).orElse(patch.recipeId());

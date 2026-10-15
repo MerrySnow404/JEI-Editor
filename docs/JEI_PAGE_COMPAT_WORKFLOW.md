@@ -233,12 +233,14 @@ public static Optional<EditorModel> createModel(RecipeHolder<?> holder, HolderLo
 
 | 状态 | 含义 | 门禁怎么断言 |
 | --- | --- | --- |
-| `done` | vanilla 页面，或显示 vanilla 配方的页面（`RESOLVED_VANILLA_UIDS`） | `jei-client-tests.ps1` 要求**至少一个模型** |
+| `done` | vanilla 页面，或显示 vanilla 配方的页面（`RESOLVED_VANILLA_UIDS`），或 JEI 自己的标签页（`TAG_PAGE_UIDS`，显示的是标签成员列表，编辑走标签补丁而不是配方补丁） | `jei-client-tests.ps1` 要求**至少一个模型** |
 | `declared` | 该 serializer（或该页面 uid）有声明 | 同上 |
 | `gap` | 不可建模：配方只在代码里 / 显示的是展示类 / 缺槽位表达能力（`NOT_COVERED_UIDS`、`withReadOnlyPages`） | 反过来要求**零个模型**——哪天有人修好了，门禁会红，提示回来改清单 |
 | `todo` | 还没做，且没有已确认的硬障碍 | 不作断言 |
 
-另有 `scripts/jei-client-tests.ps1` 里一张**已知不支持**名单（`minecraft:tag_recipes/*`），也是按"必须零模型"断言的。
+另有 `scripts/jei-client-tests.ps1` 里一张**已知不支持**名单（`$knownUnsupported`），也是按"必须零模型"断言的。
+三个 `minecraft:tag_recipes/*` 曾在这张名单里，接入标签补丁后已移出（清单按 `done` 读入、按已接入断言），
+名单目前为空。
 
 只做了客户端建模、服务端还没通的，标 `partial`，并写清缺哪一环。
 

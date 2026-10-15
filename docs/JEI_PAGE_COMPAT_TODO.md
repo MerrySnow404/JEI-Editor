@@ -134,6 +134,14 @@ A1 表里状态 `done` 但 serializer 列写着 vanilla 名称的 4 页，显示
 | `create:automatic_packing` | 221 | 自动压缩 | 见 §门禁页面的建模覆盖 |
 | `create:automatic_shapeless` | 1094 | 自动搅拌 | 见 §门禁页面的建模覆盖 |
 
+JEI 自己的三个标签页（`minecraft:tag_recipes/{item,block,fluid}`）同样是 `done` 但**没有**声明：它们显示的既不是 `RecipeHolder` 也不是 `Recipe`，而是 `TagInfoRecipe`（一个标签的成员列表），所以没有配方 JSON 可写。编辑器的做法是把页面建模成**一个** `input.0` 槽（放着该标签的第一个成员）并改写标签本身：一个标签可以有 1052 个成员（`minecraft:item`），而 `EditorModel` 最多 128 个槽，且每次操作只命名一个成员，所以「一成员一槽」既建不出来也用不上。每次操作走标签补丁（serializer `jeieditor:tag`，`tag.op` 为 `member.add`/`member.remove`/`tag.create`/`tag.delete`），配方 id 里编码了**注册表**与标签 id（`jeieditor:tag/<item|block|fluid>/<tag namespace>/<tag path>`），因为标签 id 在不同注册表里会重名（`minecraft:planks` 同时是物品标签和方块标签），而世界 SavedData、导入包与服务端权限闸门都按这个 id 寻址。方块标签的成员是方块 id，而页面显示、拖放能带上的只有**物品**，所以落进方块标签的原料要换回它放置的方块（`BlockItem#getBlock`），放不出方块的物品（木棍）被拒：
+
+| 页面 uid | 配方数 | 编辑操作 | 客户端建模 |
+| --- | --- | --- | --- |
+| `minecraft:tag_recipes/block` | 575 | 加/删成员、由某个成员建标签、删标签 | 见 §门禁页面的建模覆盖 |
+| `minecraft:tag_recipes/fluid` | 45 | 加/删成员、由某个成员建标签、删标签 | 见 §门禁页面的建模覆盖 |
+| `minecraft:tag_recipes/item` | 1052 | 加/删成员、由某个成员建标签、删标签 | 见 §门禁页面的建模覆盖 |
+
 ## A2 组：含流体/化学品原料的配方页面（36）
 
 这些页面的槽位里含流体/化学品等非物品原料。`EditorIngredient` 现在携带**原料种类**（`IngredientKind`：item / fluid / chemical）、资源 id 和**数量**，数量范围按种类区分（物品 1..64；流体/化学品是 mB 体积，1..1000000），补丁字段名也随之分种类：物品沿用 `.item`/`.count`，流体是 `.fluid`/`.fluid_amount`，化学品是 `.chemical`/`.chemical_amount`。声明用 `withFluidFields`/`withChemicalFields`标出每个字段的种类，客户端只对得上种类的槽位给出拖放目标，服务端拒绝种类不符的补丁，写回时按该模组自己的 stack JSON 形状生成（IE 的流体输入是`{"fluid":id,"amount":n}`，流体结果是 `{"amount":n,"id":id}`；Mekanism 的化学品输入是 `{"amount":n,"chemical":id}`，输出是 `{"amount":n,"id":id}`）。
@@ -202,7 +210,7 @@ A1 表里状态 `done` 但 serializer 列写着 vanilla 名称的 4 页，显示
 
 ## B 组：JEI 合成页（33）
 
-页面对象由模组代码生成，不来自配方 JSON。可以编辑的只有少数（例如 `horsepowered:*`、`cobblemon:*` 是模组自己的数据驱动配方），其余基本是展示型页面。
+页面对象由模组代码生成，不来自配方 JSON。可以编辑的只有少数（例如 `horsepowered:*`、`cobblemon:*` 是模组自己的数据驱动配方），其余基本是展示型页面。JEI 自己的三个标签页（`minecraft:tag_recipes/{item,block,fluid}`）也在这一组里，它们是 `done` 但没有声明：编辑的是标签本身，见 A1 组后半的标签页说明。
 
 **Better Piglin Trades**（`betterpiglintrades`）
 
@@ -257,9 +265,9 @@ A1 表里状态 `done` 但 serializer 列写着 vanilla 名称的 4 页，显示
 
 | 页面 uid | 配方数 | JEI 原料槽（入/出） | 说明 | 状态 |
 | --- | --- | --- | --- | --- |
-| `minecraft:tag_recipes/block` | 575 | 1 / 1 | 方块标签 | gap |
-| `minecraft:tag_recipes/fluid` | 45 | 2 / 2 | 流体标签 | gap |
-| `minecraft:tag_recipes/item` | 1052 | 1 / 1 | 物品标签 | gap |
+| `minecraft:tag_recipes/block` | 575 | 1 / 1 | 方块标签 | done |
+| `minecraft:tag_recipes/fluid` | 45 | 2 / 2 | 流体标签 | done |
+| `minecraft:tag_recipes/item` | 1052 | 1 / 1 | 物品标签 | done |
 
 **NNP Easy Farming**（`nnp_easy_farming`）
 
@@ -443,19 +451,19 @@ A1 表里状态 `done` 但 serializer 列写着 vanilla 名称的 4 页，显示
 
 每页最多记录 3 个建模样本的完整槽位内容（`modelled_samples` 里 `{key=role:kind:id:amount;…}` 那段），服务端探针用例用它复现同一模型的 `base_fingerprint`（指纹哈希的就是`kind:id:amount`，所以流体槽位不会和同 id 同数量的物品槽位撞哈希）：`scripts/jei-declared-smoke.ps1` 只把声明页面的指纹当松弛值，未声明页面必须给出真实指纹，否则补丁会被当作过期改动拒绝。
 
-91 个已接入页面（清单里状态为 `done`/`declared` 的行）都要在客户端测试里至少建出一个模型；接入过程中实测发现的三类问题：
+94 个已接入页面（清单里状态为 `done`/`declared` 的行）都要在客户端测试里至少建出一个模型；接入过程中实测发现的三类问题：
 
 | 页面 | 现象 | 性质 |
 | --- | --- | --- |
 | `immersiveengineering:arc_recycling` | 0 个模型 | 与 `arc_furnace` 共用 serializer，但它的配方在 reload 时由 `arc_recycling_list.json` 生成（没有自己的配方 JSON 可打补丁），声明把它列为只读页 → 清单不能算它已接入 |
-| `minecraft:tag_recipes/item`、`/block`、`/fluid` | 0 个模型 | JEI 直接推 `TagInfoRecipe`，既不是 `RecipeHolder` 也不是 `Recipe`，编辑器所有路径都不认 → 不是已支持页面。这不是缺口：标签页显示的是标签的成员列表（入槽与出槽是同一批成员），那是 `tags/` 注册表里的标签数据而不是配方记录，所以没有可写的配方编辑——「编辑」它等于改写标签，会连带改变所有用到该标签的配方 |
+| `minecraft:tag_recipes/item`、`/block`、`/fluid` | 每页至少 1 个模型 | 早期是 0 个模型：JEI 直接推 `TagInfoRecipe`，既不是 `RecipeHolder` 也不是 `Recipe`，编辑器所有路径都不认。现在这三页走**标签补丁**这一支：模型是一个 `input.0` 槽，操作是 `member.add`/`member.remove`/`tag.create`/`tag.delete`（见 0/A1 组后面的标签页说明） |
 | `jei:information`、`minecraft:compostable`、锻造纹饰配方 | 产出槽为空 | 不是缺陷：编辑器的契约就是产出槽为空时不可编辑，客户端测试按同一契约断言 |
 
 另外实测到 7 个**没有声明却能建模**的页面，其中 6 个已经按事实记入清单（见 A1 组的两张说明表）：`create:automatic_packing`、`automatic_shaped`、`automatic_shapeless`、`block_cutting`、`fan_blasting`、`fan_smoking`。它们能建模是因为页面上显示的配方最终就是编辑器真正实现的 serializer 的配方：`block_cutting` 是 `minecraft:stonecutting`，`fan_blasting`/`fan_smoking` 是 `minecraft:smelting`/`smoking`，而三个 `create:automatic_*` 页面的补丁携带的是配方管理器里那份底层配方的 crafting serializer（dump 里的 `create:basin` 只是为 JEI 展示转换出来的 holder 的 serializer），写回走 vanilla 分支，所以既不需要声明、也不能加声明（按 serializer 的声明会把页面从 vanilla 适配器手里拿走）。最后一个 `jerm:jerm_repair` 仍是「能建模但不记入」：它是 JEI 自己的铁砧页，走 `jei:*` 合成页路径，编辑由 UI 与服务端的只读策略拒绝，因此留在客户端的「报告但不算失败」一侧。
 
 vanilla 适配器只认自己实现的 serializer（`RecipeEditorAdapters.isImplementedVanillaSerializer`），不按配方类匹配，所以这份名单比收紧前短：`silentgear:gear_crafting` 的 `silentgear:compound_part` 配方类继承 `ShapelessRecipe`，曾被当作合成网格 offer 出来，而服务端对它的补丁一律回答 `stale or unsupported patch`（补丁从未落盘），收紧后该页回到 0 模型；本轮改为给该页的两个 serializer（`silentgear:gear_crafting`、`silentgear:compound_part`）出**声明**，补丁改走声明路径，页面因此重新可编辑。`create:automatic_shaped`（39 → 32 个模型）与 `create:automatic_shapeless`（40 → 24）只失去 serializer 不是 vanilla crafting 的子项，例如 `refinedstorage:recoloring`——它自己的 codec 要 `ingredient`/`dye`，而重建出来的是 `ingredients`/`result`，写出的 JSON 读不回来。`create:automatic_packing` 不受影响：它的样本全部携带 `minecraft:crafting_shaped`/`crafting_shapeless`。
 
-门禁除了「已接入必须至少建出一个模型」，还反过来断言两个集合必须建出**零**个模型：标 `gap` 的行，以及脚本里锁定的已知不可用页面（三个 `minecraft:tag_recipes/*`）。这样缺口是被断言的事实而不是被忽略的行：哪天有人修好了，门禁会红，提示回来改本清单。
+门禁除了「已接入必须至少建出一个模型」，还反过来断言 `gap` 行必须建出**零**个模型。这样缺口是被断言的事实而不是被忽略的行：哪天有人修好了，门禁会红，提示回来改本清单。客户端测试脚本里另有一份「已知不可用」的锁定名单（`$knownUnsupported`），目前为空：它原先锁着三个标签页，那三页接入标签补丁之后由清单按 `done` 读入、按已接入断言（每页至少一个模型）。
 
 ### 实测查出的编译器缺陷
 
@@ -499,7 +507,7 @@ vanilla 适配器只认自己实现的 serializer（`RecipeEditorAdapters.isImpl
 | W0 | 框架 | 声明式模组配方适配器（每模组一份声明 + 按 JEI 槽视图建模 + 原始 JSON 打补丁） | done |
 | W1 | A1 组 | A1 表 40 页：已声明 26 个、vanilla 适配器直接接管的 6 个、`gap` 8 个、仍是 todo 0 个；另有 15 个非 RecipeHolder 页（B 组）也已声明。未声明页的成因有三类：serializer 本身就是 vanilla 或与别的模组共用（写回走 vanilla 适配器，不能再加声明，否则会顶掉 vanilla 页）；配方由模组在运行时生成、没有配方 JSON 可打补丁；网格或多输入数组形状。`immersiveengineering:sawmill` 与 `arc_furnace` 的多种输出形状已由「有序段列表」（`withConcatenatedOutputs`：按 JEI 类别的加槽顺序把单段/重复段拼接到配方 JSON 上，客户端只看槽数、服务端按 JSON 解析具体字段）接入；`mekanism:smelting` 显示的就是 vanilla `minecraft:smelting` 的配方本身，只是 id 被模组改写，因此按别名还原成真实配方后接入（见「运行时合成页面的真实来源」） | in_progress |
 | W2 | A2 组 | 含流体/化学品的 36 页：声明 31 页、`gap` 5 页，其余 0 页仍未接入——`create:spout_filling` 已按 `SpoutCategory.setRecipe` 的槽序（item → fluid → 产出）由 `CreateSpoutSlotSequence` 接入（覆盖 12/50，其余是运行时生成或条件未满足的文件）；`create:draining` 试过并**回退**：按 `ItemDrainCategory` 的槽序（item → fluid → item）写出的声明让 40 条采样全部建模，但其中 78/80 的条目是现算的（管理器里没有），它们画出的输入槽是带组件补丁的堆叠、物品产出为空，客户端测试的派生形状断言因此报出 57 条失败（`draws 1 input slots but its item band (0) and fluid band (0) hold 0`、`leaves the item/fluid slot output.1 empty`），所以该页按事实记 `gap`。回退的原因**不是**路径寻址：本轮的空路径槽（`DerivedSlot` 的 paths 为空）已经能表达「这个槽没有字段」，但 draining 卡住的是**模型侧解析**——页面上那个槽显示的是带组件补丁的堆叠、产出槽是空的，编辑器的物品原料只有 `id + count`，解析不出代表原料，而派生契约要求声明了非纯物品种类的页面不能留一个解析不出来的槽。它需要的是「一个模型解析不出来的槽」这类表达能力（外加最小的原料模型扩展），而不是一条新声明。（`create:automatic_brewing` 与 `create:mixing` 共用 serializer，声明把它列为只读页，清单因此记 `gap`。）这些数字来自「运行时合成页面的真实来源」一节的专用探针。原先被挡住的 `create:mixing` / `create:packing` 已由**配方推导的槽位序列**接入：它们的槽位顺序来自 `ItemHelper.condenseIngredients` 的合并与「物品槽在前、流体槽在后」的重排，字段列表推不出来，所以声明把这个推导本身写下来（见 A2 组说明里的第四条）；IE 的流体页（`refinery`/`mixer`/`coke_oven`/`fermenter`/`squeezer`）与需要序列的 `cloche`/`bottling_machine`/`fertilizer`/`blast_furnace_fuel` 也已全部接入 | in_progress |
-| W3 | B 组 | 普查完成：33 页里 33 页已逐页判定（各自理由写在生成器的集合与注释里：已声明、或按事实记 `gap`；`todo` 已清空），候选调查见 `build/tmp/jei-synthetic-survey.md`。剩下的都不是「再写一条声明」能解决的，见 W4 | in_progress |
+| W3 | B 组 | 普查完成：33 页里 33 页已逐页判定（各自理由写在生成器的集合与注释里：已声明、按标签补丁类型接入（三个 `minecraft:tag_recipes/*`）、或按事实记 `gap`；`todo` 已清空），候选调查见 `build/tmp/jei-synthetic-survey.md`。剩下的都不是「再写一条声明」能解决的，见 W4 | in_progress |
 | W4 | 新机制 | 三个「需要新机制」的页面都已用**派生契约**接入：`cobblemon:campfire_pot_recipe` 与 `create:mechanical_crafting` 靠 `DerivedSlotSequence.fieldBackedInputOrdinals` 告诉客户端「哪些输入槽位有字段」（campfire_pot 的 seasoning 预览槽在**末尾**、被建模成只读；mechanical_crafting 的`pattern` 按**稠密格子**一格一槽，空格格的空路径夹在字母格**中间**，补丁打到它上面会被整条拒绝）；`create:sequenced_assembly` 靠**逐槽路径**——其槽位顺着 `sequence` 的每一步排布（base `ingredient`、deploying 画该步第 2 个物品、filling 画该步第 1 个流体、pressing/cutting 不画），所以序号到字段是一张路径表而不是模式。仍需要机制的只有 `create:draining`（试接后按 57 条实测失败回退：它卡在模型侧解析——输入槽是带组件补丁的堆叠、物品产出为空，需要「一个模型解析不出来的槽」这类表达能力，空路径槽解决不了它） | pending |
 | — | C 组 | 不接入 | n/a |
 

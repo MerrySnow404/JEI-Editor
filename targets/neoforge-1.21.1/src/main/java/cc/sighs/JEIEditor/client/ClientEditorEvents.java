@@ -1,8 +1,10 @@
 package cc.sighs.JEIEditor.client;
 
 import cc.sighs.JEIEditor.editor.EditorModel;
+import cc.sighs.JEIEditor.editor.TagPatchFields;
 import cc.sighs.JEIEditor.JEIEditorNeoForge121;
 import cc.sighs.JEIEditor.platform.network.NeoForge121Network;
+import cc.sighs.JEIEditor.platform.recipe.TagEditorAdapter;
 import mezz.jei.gui.recipes.RecipesGui;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.EditBox;
@@ -187,18 +189,21 @@ public final class ClientEditorEvents {
         if (deletionTarget.isPresent() || overRecipeLayout) {
             Optional<EditorModel> creationTarget = JeiRecipeEditorPlugin.recipeCreationTargetAtMouse(
                     gui, event.getMouseX(), event.getMouseY());
+            Optional<JeiRecipeEditorPlugin.TagPageTarget> tagTarget =
+                    JeiRecipeEditorPlugin.tagPageTargetAtMouse(gui, event.getMouseX(), event.getMouseY());
             boolean clearableInput = deletionTarget.isPresent()
                     && !ClientEditorState.isRecipeDeleted(deletionTarget.get().recipeId())
                     && JeiRecipeEditorPlugin.hasEditableInputAtMouse(
                     gui, event.getMouseX(), event.getMouseY());
-            openMenu(gui, event.getMouseX(), event.getMouseY(), deletionTarget, clearableInput, creationTarget);
+            openMenu(gui, event.getMouseX(), event.getMouseY(), deletionTarget, clearableInput,
+                    creationTarget, tagTarget);
             event.setCanceled(true);
             return;
         }
         if (isBlankJeiArea(gui, event.getMouseX(), event.getMouseY())) {
             Optional<EditorModel> creationTarget = JeiRecipeEditorPlugin.recipeCreationTargetOnPage(gui);
             openMenu(gui, event.getMouseX(), event.getMouseY(), Optional.empty(), false,
-                    creationTarget);
+                    creationTarget, Optional.empty());
             event.setCanceled(true);
         }
     }
@@ -497,7 +502,8 @@ public final class ClientEditorEvents {
 
     private static void openMenu(RecipesGui screen, double mouseX, double mouseY,
                                  Optional<EditorModel> deletionTarget, boolean clearableInput,
-                                 Optional<EditorModel> creationTarget) {
+                                 Optional<EditorModel> creationTarget,
+                                 Optional<JeiRecipeEditorPlugin.TagPageTarget> tagTarget) {
         // A context-menu click does not travel through JEI's left-click field
         // handler. Commit a focused anvil cost before the menu can submit it.
         AnvilExperienceInputController.commitAll(screen);
@@ -520,6 +526,19 @@ public final class ClientEditorEvents {
                 if (ClientEditorState.hasCreationDraft(screen)) {
                     EditBox input = recipeIdInputs.get(screen);
                     String error = ClientEditorState.renameCreationDraft(screen,
+                            input == null ? "" : input.getValue());
+                    if (!error.isEmpty()) {
+                        LOGGER.info("Recipe save skipped: {}", error);
+                        ClientEditorState.setLastDrop(error);
+                        return;
+                    }
+                }
+                if (ClientEditorState.hasTagCreateDraft(screen)) {
+                    // A staged new tag is named the same way a created recipe is: the
+                    // page bar types the path and the namespace is the editor's own, so
+                    // the patch is addressed to the tag the user just named.
+                    EditBox input = recipeIdInputs.get(screen);
+                    String error = ClientEditorState.renameTagCreateDraft(screen,
                             input == null ? "" : input.getValue());
                     if (!error.isEmpty()) {
                         LOGGER.info("Recipe save skipped: {}", error);
@@ -580,6 +599,22 @@ public final class ClientEditorEvents {
                     }
                 }));
             }
+            if (tagTarget.isPresent()) {
+                // A tag page offers neither of the two items above: it has no recipe to
+                // delete and no page of its own to create one on, and its one editable
+                // operation per member is a tag rewrite. Both member items are offered
+                // only when the pointer is really on a member the editor can name.
+                JeiRecipeEditorPlugin.TagPageTarget tag = tagTarget.get();
+                if (tag.onTagSlot()) {
+                    items.add(new MenuItem("Delete Tag", () -> stageTagDelete(tag.model())));
+                } else if (tag.memberId() != null) {
+                    String member = tag.memberId();
+                    items.add(new MenuItem("Remove " + member + " From Tag",
+                            () -> stageTagMemberRemoval(tag.model(), member)));
+                    items.add(new MenuItem("New Tag From This Element...",
+                            () -> stageNewTag(screen, tag.model(), member)));
+                }
+            }
         }
         int height = MENU_BORDER * 2 + items.size() * MENU_ROW_HEIGHT;
         int x = Math.max(2, Math.min(screen.width - MENU_WIDTH - 2, (int) mouseX));
@@ -592,6 +627,55 @@ public final class ClientEditorEvents {
             item.height = MENU_ROW_HEIGHT;
         }
         menus.put(screen, new MenuState(x, y, MENU_WIDTH, height, items));
+    }
+
+    /**
+     * Stages the tag-delete of the tag page the pointer is on. Deleting a tag means
+     * our pack overrides it with no members (see the server's {@code TagEditApplier}),
+     * so nothing the user has to confirm is dropped from the world; the server refuses
+     * the patch if the tag already has no members.
+     */
+    private static void stageTagDelete(EditorModel model) {
+        try {
+            ClientEditorState.setTagPatch(TagEditorAdapter.deleteTag(model).orElseThrow(() ->
+                    new IllegalArgumentException("this tag page cannot be deleted")));
+            ClientEditorState.setLastDrop("Tag marked for deletion: " + tagIdOf(model));
+        } catch (IllegalArgumentException exception) {
+            ClientEditorState.setLastDrop(exception.getMessage());
+        }
+    }
+
+    /** Stages the removal of one member the pointer is on. */
+    private static void stageTagMemberRemoval(EditorModel model, String memberId) {
+        try {
+            ClientEditorState.setTagPatch(TagEditorAdapter.removeMember(model, memberId).orElseThrow(() ->
+                    new IllegalArgumentException("this tag cannot hold " + memberId)));
+            ClientEditorState.setLastDrop("Removing " + memberId + " from " + tagIdOf(model));
+        } catch (IllegalArgumentException exception) {
+            ClientEditorState.setLastDrop(exception.getMessage());
+        }
+    }
+
+    /**
+     * Stages a new tag whose single element is the member the pointer is on, and asks
+     * for its id in the page bar. The new tag only exists once the patch is saved and
+     * the server reloads, so nothing is created here.
+     */
+    private static void stageNewTag(RecipesGui screen, EditorModel model, String memberId) {
+        try {
+            ClientEditorState.createTag(screen, model, memberId);
+            openRecipeIdInput(screen);
+            ClientEditorState.setLastDrop("New tag from " + memberId
+                    + ". Type its ID, then Save.");
+        } catch (IllegalArgumentException exception) {
+            ClientEditorState.setLastDrop(exception.getMessage());
+        }
+    }
+
+    /** The tag id a tag model addresses, for status messages; falls back to its recipe id. */
+    private static String tagIdOf(EditorModel model) {
+        Optional<TagPatchFields.Target> target = TagPatchFields.target(model.recipeId());
+        return target.isPresent() ? target.get().tagId() : model.recipeId();
     }
 
     private static void reload(net.minecraft.client.gui.screens.Screen screen) {

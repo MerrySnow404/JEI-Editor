@@ -4,9 +4,11 @@ import cc.sighs.JEIEditor.editor.RecipePatch;
 import cc.sighs.JEIEditor.JEIEditorNeoForge121;
 import cc.sighs.JEIEditor.editor.EditorIngredient;
 import cc.sighs.JEIEditor.editor.EditorModel;
+import cc.sighs.JEIEditor.editor.EditorSlot;
 import cc.sighs.JEIEditor.editor.IngredientKind;
 import cc.sighs.JEIEditor.editor.RecipePatchSemantics;
 import cc.sighs.JEIEditor.editor.SlotPatchFields;
+import cc.sighs.JEIEditor.editor.TagPatchFields;
 import cc.sighs.JEIEditor.platform.fuel.FuelOverrideState;
 import cc.sighs.JEIEditor.platform.recipe.CraftingSlotMapper;
 import cc.sighs.JEIEditor.platform.recipe.FuelRecipeEditorAdapter;
@@ -16,11 +18,14 @@ import cc.sighs.JEIEditor.platform.recipe.RecipeAdapterSupport;
 import cc.sighs.JEIEditor.platform.recipe.RecipeCreationAdapter;
 import cc.sighs.JEIEditor.platform.recipe.RecipeDeletionAdapter;
 import cc.sighs.JEIEditor.platform.recipe.RecipeEditorAdapters;
+import cc.sighs.JEIEditor.platform.recipe.TagEditorAdapter;
 import cc.sighs.JEIEditor.recipe.RecipeFieldMapping;
 import mezz.jei.api.IModPlugin;
 import mezz.jei.api.JeiPlugin;
+import mezz.jei.api.constants.VanillaTypes;
 import mezz.jei.api.gui.handlers.IGhostIngredientHandler;
 import mezz.jei.api.ingredients.ITypedIngredient;
+import mezz.jei.api.neoforge.NeoForgeTypes;
 import mezz.jei.api.registration.IGuiHandlerRegistration;
 import mezz.jei.api.recipe.RecipeIngredientRole;
 import mezz.jei.api.recipe.category.IRecipeCategory;
@@ -29,6 +34,7 @@ import mezz.jei.api.constants.RecipeTypes;
 import mezz.jei.api.recipe.vanilla.IJeiFuelingRecipe;
 import mezz.jei.gui.recipes.RecipesGui;
 import mezz.jei.common.Internal;
+import mezz.jei.library.plugins.jei.tags.ITagInfoRecipe;
 import mezz.jei.library.plugins.vanilla.cooking.fuel.FuelingRecipe;
 import mezz.jei.library.plugins.vanilla.anvil.AnvilRecipe;
 import mezz.jei.api.recipe.vanilla.IJeiAnvilRecipe;
@@ -38,13 +44,16 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.renderer.Rect2i;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.tags.TagKey;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.Recipe;
 import net.minecraft.world.item.crafting.RecipeHolder;
+import net.neoforged.neoforge.fluids.FluidStack;
 
 import java.util.Collections;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -280,6 +289,11 @@ public final class JeiRecipeEditorPlugin implements IModPlugin {
             String burnTime = patch.fields().get("fuel.burn_time");
             return burnTime != null && !burnTime.equals(model.properties().get("burn_time"));
         }
+        // A tag patch carries no slot fields: the operation it names is the edit, and
+        // the slot it is shown on is the page's single tag slot.
+        if (TagPatchFields.isTagPatch(patch)) {
+            return "input.0".equals(slotKey);
+        }
         cc.sighs.JEIEditor.editor.EditorSlot original = model.slots().stream()
                 .filter(slot -> slotKey.equals(slot.key()))
                 .findFirst()
@@ -309,6 +323,13 @@ public final class JeiRecipeEditorPlugin implements IModPlugin {
         if (FuelRecipeEditorAdapter.isFuelRecipe(displayedRecipe)) {
             Optional<EditorModel> model = RecipeEditorAdapters.createFuelModel(displayedRecipe);
             return model.isPresent() && model.get().recipeId().equals(recipeId);
+        }
+        // A tag page's patch is addressed to the encoded tag id, which is what its
+        // model carries, and no recipe holder ever has that id: resolve the page's
+        // own identity first so a pending tag edit attaches to the page it was made on.
+        String tagId = tagRecipeId(category, displayedRecipe);
+        if (tagId != null) {
+            return tagId.equals(recipeId);
         }
         Optional<ResourceLocation> categoryId = JeiRecipeIntrospection.recipeId(category, displayedRecipe);
         // Some JEI generated pages (notably anvil enchantment pages) have no
@@ -466,6 +487,73 @@ public final class JeiRecipeEditorPlugin implements IModPlugin {
         return Optional.empty();
     }
 
+    /**
+     * The tag page under the pointer and what the pointer is on inside it, or empty
+     * when the pointer is not on a slot of a tag page.
+     *
+     * <p>JEI draws the page, not the editor: one INPUT slot holds every member and
+     * each member gets an OUTPUT slot of its own, so the slot under the pointer is
+     * found through JEI's own input router (the same call the editor's other slot
+     * lookups use) rather than by a second hit test. The result carries the member
+     * the hovered member slot shows, because both operations a member slot offers -
+     * removing it and creating a tag from it - need that id; a slot whose member
+     * cannot be resolved offers nothing rather than a wrong id.
+     */
+    static Optional<TagPageTarget> tagPageTargetAtMouse(RecipesGui gui, double mouseX, double mouseY) {
+        for (mezz.jei.gui.recipes.IRecipeLayoutWithButtons<?> layout : visibleRecipeLayouts(gui)) {
+            if (!layout.getRecipeLayout().isMouseOver(mouseX, mouseY)) {
+                continue;
+            }
+            Object displayedRecipe = layout.getRecipeLayout().getRecipe();
+            if (!(displayedRecipe instanceof ITagInfoRecipe)) {
+                continue;
+            }
+            IRecipeCategory<?> category = layout.getRecipeLayout().getRecipeCategory();
+            Optional<EditorModel> model = resolveModel(displayedRecipe, category,
+                    layout.getRecipeLayout().getRecipeSlotsView());
+            if (!model.isPresent() || !TagEditorAdapter.supportsSerializer(model.get().serializerId())
+                    || ClientEditorState.isRecipeDeleted(model.get().recipeId())) {
+                continue;
+            }
+            Optional<mezz.jei.api.gui.inputs.RecipeSlotUnderMouse> slot =
+                    layout.getRecipeLayout().getSlotUnderMouse(mouseX, mouseY);
+            if (!slot.isPresent()) {
+                continue;
+            }
+            IRecipeSlotsView slots = layout.getRecipeLayout().getRecipeSlotsView();
+            String slotKey = RecipeGhostHandler.slotKey(slots.getSlotViews(), slot.get().slot(),
+                    displayedRecipe, model.get());
+            if ("input.0".equals(slotKey)) {
+                return Optional.of(new TagPageTarget(model.get(), "input.0", null));
+            }
+            String memberId = memberId(slot.get().slot());
+            if (memberId != null) {
+                return Optional.of(new TagPageTarget(model.get(), null, memberId));
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * The member id one tag member slot shows, or null when the pointer is not on a
+     * member slot or what it shows cannot be named as one.
+     *
+     * <p>Only INPUT and OUTPUT slots exist on a JEI page, and the model names the
+     * input one, so any other slot the pointer can be on is a member slot.
+     */
+    private static String memberId(mezz.jei.api.gui.ingredient.IRecipeSlotDrawable slot) {
+        if (slot == null || slot.getRole() != RecipeIngredientRole.OUTPUT) {
+            return null;
+        }
+        for (ITypedIngredient<?> candidate : slot.getAllIngredientsList()) {
+            Optional<EditorIngredient> ingredient = RecipeAdapterSupport.editorIngredient(candidate);
+            if (ingredient.isPresent()) {
+                return ingredient.get().id();
+            }
+        }
+        return null;
+    }
+
     static Optional<EditorModel> recipeCreationTargetAtMouse(
             RecipesGui gui, double mouseX, double mouseY) {
         for (mezz.jei.gui.recipes.IRecipeLayoutWithButtons<?> layout : visibleRecipeLayouts(gui)) {
@@ -548,6 +636,10 @@ public final class JeiRecipeEditorPlugin implements IModPlugin {
         if (moddedModel.isPresent()) {
             return moddedModel;
         }
+        Optional<EditorModel> tagModel = createTagModel(category, displayedRecipe);
+        if (tagModel.isPresent()) {
+            return tagModel;
+        }
         if (category != null && !JeiRecipeIntrospection.isHandled(category, displayedRecipe)) {
             return Optional.empty();
         }
@@ -562,6 +654,137 @@ public final class JeiRecipeEditorPlugin implements IModPlugin {
             ClientEditorState.setLastDrop("This recipe format is not supported by the editor adapter");
         }
         return model;
+    }
+
+    /**
+     * The editor model of a JEI tag page, or empty when the page is not one.
+     *
+     * <p>The model has exactly one slot, holding the tag's first member, and not one
+     * slot per member. A tag can hold 1052 members ({@code minecraft:item} in this
+     * pack) while EditorModel accepts at most 128 slots, and the patch is addressed
+     * to the tag as a whole - {@code TagPatchFields} carries one element per
+     * operation - so a per-member model would be both unbuildable and unusable. The
+     * slot exists so the page has a drag target and a model identity at all: dropping
+     * an ingredient on it adds that ingredient to the tag.
+     *
+     * <p>The registry lives in the recipe id
+     * ({@link cc.sighs.JEIEditor.editor.TagPatchFields#recipeId(String, String)})
+     * because that is what the world's SavedData, the import bundle and the server's
+     * policy gate key a tag patch by, and a tag id is not unique across registries -
+     * {@code minecraft:planks} names an item tag and a block tag at once.
+     */
+    private static Optional<EditorModel> createTagModel(IRecipeCategory<?> category, Object displayedRecipe) {
+        String registry = tagRegistry(category);
+        if (registry == null || !(displayedRecipe instanceof ITagInfoRecipe)) {
+            return Optional.empty();
+        }
+        ITagInfoRecipe recipe = (ITagInfoRecipe) displayedRecipe;
+        Optional<EditorIngredient> member = firstMember(recipe, registry);
+        TagKey<?> tag = recipe.getTag();
+        if (!member.isPresent() || tag == null) {
+            // A tag with no member the editor can address has nothing to model: the
+            // page shows its members, and a model with no ingredient would offer a
+            // drag whose patch names whatever the user then dropped - not an edit of
+            // what the page displayed.
+            return Optional.empty();
+        }
+        String recipeId = TagPatchFields.recipeId(registry, tag.location().toString());
+        List<EditorSlot> slots = Collections.<EditorSlot>singletonList(
+                new EditorSlot("input.0", "input", member.get()));
+        LinkedHashMap<String, String> properties = new LinkedHashMap<String, String>();
+        // The same visual mapping key ModdedRecipeModelSupport writes, so the slot
+        // mapper resolves JEI's one input slot to this key deterministically; JEI's
+        // member slots (one OUTPUT slot each) map to no key and stay read-only.
+        properties.put(JeiVanillaRecipeEditorAdapter.VISUAL_INPUT_PROPERTY_PREFIX + "0", "input.0");
+        return Optional.of(new EditorModel(recipeId, TagPatchFields.SERIALIZER,
+                RecipeAdapterSupport.fingerprint(recipeId, TagPatchFields.SERIALIZER, slots, properties),
+                slots, properties));
+    }
+
+    /**
+     * The registry a tag page belongs to, or null when the page is not one of the
+     * three a tag patch can write.
+     *
+     * <p>The recipe type uid is where the registry comes from: JEI registers one tag
+     * category per registry that has an ingredient type and builds the uid as
+     * {@code <registry namespace>:tag_recipes/<registry path>}. The registry is
+     * therefore read from the id rather than from what the page displays, because a
+     * dropped ingredient has to be converted into the registry the tag file is
+     * written in ({@code TagEditorAdapter}). Only the item, block and fluid
+     * registries have an applier; a page of any other registry (a modded ingredient
+     * registry beyond those three) keeps no model, so no drag is offered there.
+     */
+    private static String tagRegistry(IRecipeCategory<?> category) {
+        if (category == null) {
+            return null;
+        }
+        ResourceLocation uid = category.getRecipeType().getUid();
+        if (uid == null || !"minecraft".equals(uid.getNamespace())) {
+            return null;
+        }
+        String prefix = "tag_recipes/";
+        if (!uid.getPath().startsWith(prefix)) {
+            return null;
+        }
+        String registry = uid.getPath().substring(prefix.length());
+        return TagPatchFields.isRegistry(registry) ? registry : null;
+    }
+
+    /**
+     * The encoded recipe id of a tag page's tag, or null when the page is not a tag
+     * page the tag patch kind can address.
+     *
+     * <p>This is the identity a tag model carries, so the pending-patch lookup reads
+     * it through here rather than re-deriving the encoding: {@code matchesRecipe}
+     * compares a pending tag patch against the page it belongs to by exactly this id.
+     */
+    private static String tagRecipeId(IRecipeCategory<?> category, Object displayedRecipe) {
+        String registry = tagRegistry(category);
+        if (registry == null || !(displayedRecipe instanceof ITagInfoRecipe)) {
+            return null;
+        }
+        TagKey<?> tag = ((ITagInfoRecipe) displayedRecipe).getTag();
+        return tag == null ? null : TagPatchFields.recipeId(registry, tag.location().toString());
+    }
+
+    /**
+     * The tag's first member as an editor ingredient of the kind the page shows, or
+     * empty when the member cannot be named by a registry id.
+     *
+     * <p>The kind follows the page: JEI's item and block tag pages draw item stacks
+     * (the block page draws the block's item, which is also what a drag carries and
+     * what {@code TagEditorAdapter} converts back into a block id), the fluid page
+     * draws fluid stacks.
+     */
+    private static Optional<EditorIngredient> firstMember(ITagInfoRecipe recipe, String registry) {
+        List<ITypedIngredient<?>> members = recipe.getTypedIngredients();
+        if (members == null || members.isEmpty() || members.get(0) == null) {
+            return Optional.empty();
+        }
+        ITypedIngredient<?> first = members.get(0);
+        if (TagPatchFields.REGISTRY_FLUID.equals(registry)) {
+            Optional<FluidStack> stack = first.getIngredient(NeoForgeTypes.FLUID_STACK);
+            if (!stack.isPresent()) {
+                return Optional.empty();
+            }
+            ResourceLocation id = BuiltInRegistries.FLUID.getKey(stack.get().getFluid());
+            // A tag member is an id and carries no amount, so the stack's own amount is
+            // only the display representative; JEI builds it from the type's default
+            // ingredient, which is clamped here to the kind's minimum rather than
+            // refusing a tag whose members have no volume.
+            return id == null
+                    ? Optional.<EditorIngredient>empty()
+                    : Optional.of(new EditorIngredient(IngredientKind.FLUID, id.toString(),
+                            Math.max(IngredientKind.FLUID.minAmount(), stack.get().getAmount())));
+        }
+        Optional<ItemStack> stack = first.getIngredient(VanillaTypes.ITEM_STACK);
+        if (!stack.isPresent() || stack.get().isEmpty()) {
+            return Optional.empty();
+        }
+        ResourceLocation id = BuiltInRegistries.ITEM.getKey(stack.get().getItem());
+        return id == null
+                ? Optional.<EditorIngredient>empty()
+                : Optional.of(new EditorIngredient(id.toString(), Math.max(1, stack.get().getCount())));
     }
 
     /** Serializer of the held recipe, or null when the page is not a recipe record. */
@@ -1094,6 +1317,42 @@ public final class JeiRecipeEditorPlugin implements IModPlugin {
             this.slots = slots;
             this.area = area;
             this.recipe = recipe;
+        }
+    }
+
+    /**
+     * One tag page under the pointer: its model and what the pointer is on inside it.
+     *
+     * <p>Exactly one of the two is set. {@code tagSlotKey} is the model's own slot
+     * key, which is the tag's slot - the one holding every member - and
+     * {@code memberId} is the member a member slot shows. A tag page has no third
+     * kind of slot, so an empty {@code memberId} means the pointer is not on any
+     * slot this descriptor knows.
+     */
+    static final class TagPageTarget {
+        private final EditorModel model;
+        private final String tagSlotKey;
+        private final String memberId;
+
+        private TagPageTarget(EditorModel model, String tagSlotKey, String memberId) {
+            this.model = model;
+            this.tagSlotKey = tagSlotKey;
+            this.memberId = memberId;
+        }
+
+        /** The tag page's model, whose recipe id is the tag patch's identity. */
+        EditorModel model() {
+            return model;
+        }
+
+        /** True when the pointer is on the tag's own slot rather than on a member. */
+        boolean onTagSlot() {
+            return tagSlotKey != null;
+        }
+
+        /** The member the pointer is on, or null when it is on the tag's own slot. */
+        String memberId() {
+            return memberId;
         }
     }
 

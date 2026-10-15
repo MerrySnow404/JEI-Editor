@@ -121,7 +121,22 @@ $clientOnlyJarPrefixes = @('chest-helper__', 'create-jei-compat__')
 $hiddenJars = New-Object System.Collections.Generic.List[string]
 $modsDirectory = Join-Path $runDirectory 'mods'
 if (Test-Path -LiteralPath $modsDirectory -PathType Container) {
-    foreach ($jar in Get-ChildItem -LiteralPath $modsDirectory -Filter '*.jar' -File) {
+    # Adopt leftovers from an earlier run first. The finally block puts every jar it
+    # hid back, but a run that is killed outright never reaches it, and the next run
+    # would not even notice the renamed file - it no longer ends in .jar, so nothing
+    # looks for it. The pack then stays short of a mod for good, which the client
+    # test and verify.py both see as a different environment. Adding the leftovers
+    # to this list makes the next run restore them.
+    foreach ($file in Get-ChildItem -LiteralPath $modsDirectory -File) {
+        if ($file.Name.EndsWith('.jar.server-smoke-disabled')) {
+            $hiddenJars.Add($file.FullName)
+            Write-Host ("  adopting leftover {0} for restoration" -f $file.Name)
+        }
+    }
+    foreach ($jar in Get-ChildItem -LiteralPath $modsDirectory -File) {
+        if (-not $jar.Name.EndsWith('.jar')) {
+            continue
+        }
         foreach ($prefix in $clientOnlyJarPrefixes) {
             if ($jar.Name.StartsWith($prefix)) {
                 $hidden = $jar.FullName + '.server-smoke-disabled'
@@ -2216,6 +2231,129 @@ $probeCases = @(
             'result.id' = 'minecraft:lapis_lazuli'
             'result.count' = 3
         }
+    },
+    # --- JEI's tag pages (minecraft:tag_recipes/item|block|fluid) --------------
+    #
+    # A tag page is not a recipe: it lists a tag's member list, so editing it is a tag
+    # patch - serializer "jeieditor:tag", and the recipe id encodes the registry and the
+    # tag id as jeieditor:tag/<registry>/<tag namespace>/<tag path> (one tag id can exist
+    # in two registries, and both the bundle and the world SavedData key patches by recipe
+    # id, so the registry has to be part of the key). The server writes the tag's WHOLE
+    # member list with "replace": true into the generated pack
+    # (data/<tag namespace>/tags/<registry>/<path>.json) and then reloads, because a tag
+    # has no hot-patch equivalent to a recipe: JEI's tag pages and every recipe that uses
+    # the tag read the tag map the last resource reload bound.
+    #
+    # The first four probes walk one tag's whole life - create, add, remove, delete - in
+    # order, each on the state the one before it left behind, so their expectations are
+    # the member lists themselves. The fifth adds to a vanilla tag and pins the point of
+    # the snapshot: the members other packs already contribute are carried into the file
+    # rather than being replaced by the one member the user added.
+    #
+    # The first three are chained steps over one file, so only the last of them can carry
+    # the after-reload re-assertion: LaterStep says a later probe deliberately rewrites
+    # this probe's file. Each step's own import is still asserted when it happens.
+    @{
+        Name = 'jeieditor:tag (create a tag with its first member)'
+        Bundle = 'declared-probe-tag-create'
+        RecipeId = 'jeieditor:tag/item/jeieditor/smoke_item'
+        Serializer = 'jeieditor:tag'
+        RecipePath = 'data\jeieditor\tags\item\smoke_item.json'
+        Fields = '{"tag.op":"tag.create","tag.registry":"item","tag.element":"minecraft:iron_ingot"}'
+        Written = $true
+        LaterStep = $true
+        Expect = @{
+            'values.0' = 'minecraft:iron_ingot'
+            'replace' = $true
+        }
+        Absent = @('values.1')
+    },
+    @{
+        Name = 'jeieditor:tag (add a second member)'
+        Bundle = 'declared-probe-tag-add'
+        RecipeId = 'jeieditor:tag/item/jeieditor/smoke_item'
+        Serializer = 'jeieditor:tag'
+        RecipePath = 'data\jeieditor\tags\item\smoke_item.json'
+        Fields = '{"tag.op":"member.add","tag.registry":"item","tag.element":"minecraft:gold_ingot"}'
+        Written = $true
+        LaterStep = $true
+        Expect = @{
+            'values.0' = 'minecraft:iron_ingot'
+            'values.1' = 'minecraft:gold_ingot'
+            'replace' = $true
+        }
+        Absent = @('values.2')
+    },
+    @{
+        Name = 'jeieditor:tag (remove a member)'
+        Bundle = 'declared-probe-tag-remove'
+        RecipeId = 'jeieditor:tag/item/jeieditor/smoke_item'
+        Serializer = 'jeieditor:tag'
+        RecipePath = 'data\jeieditor\tags\item\smoke_item.json'
+        Fields = '{"tag.op":"member.remove","tag.registry":"item","tag.element":"minecraft:iron_ingot"}'
+        Written = $true
+        LaterStep = $true
+        Expect = @{
+            'values.0' = 'minecraft:gold_ingot'
+            'replace' = $true
+        }
+        Absent = @('values.1')
+    },
+    @{
+        Name = 'jeieditor:tag (delete the tag, which empties it)'
+        Bundle = 'declared-probe-tag-delete'
+        RecipeId = 'jeieditor:tag/item/jeieditor/smoke_item'
+        Serializer = 'jeieditor:tag'
+        RecipePath = 'data\jeieditor\tags\item\smoke_item.json'
+        Fields = '{"tag.op":"tag.delete","tag.registry":"item"}'
+        Written = $true
+        Expect = @{
+            'replace' = $true
+        }
+        Absent = @('values.0')
+    },
+    @{
+        Name = 'jeieditor:tag (add to a vanilla tag keeps the members other packs define)'
+        Bundle = 'declared-probe-tag-vanilla'
+        RecipeId = 'jeieditor:tag/fluid/minecraft/water'
+        Serializer = 'jeieditor:tag'
+        RecipePath = 'data\minecraft\tags\fluid\water.json'
+        Fields = '{"tag.op":"member.add","tag.registry":"fluid","tag.element":"minecraft:lava"}'
+        Written = $true
+        Expect = @{
+            'values.0' = 'minecraft:water'
+            'values.1' = 'minecraft:flowing_water'
+            'values.2' = 'minecraft:lava'
+            'replace' = $true
+        }
+        Absent = @('values.3')
+    },
+    # The semantic preconditions: a member the registry does not know would make the loader
+    # refuse the whole file on the next reload and take the tag's other members down with it,
+    # and a delete of a tag that has no members describes nothing. Both are refused by the
+    # pre-write gate, so nothing is written. They name their own tags on purpose: a probe
+    # deletes its target file before importing, so aiming one at a tag an earlier probe wrote
+    # would take that probe's artifact away and the after-reload re-assertion would find it
+    # missing.
+    @{
+        Name = 'jeieditor:tag (an element no registry knows is refused)'
+        Bundle = 'declared-probe-tag-unknown-element'
+        RecipeId = 'jeieditor:tag/item/jeieditor/smoke_unknown'
+        Serializer = 'jeieditor:tag'
+        RecipePath = 'data\jeieditor\tags\item\smoke_unknown.json'
+        Fields = '{"tag.op":"member.add","tag.registry":"item","tag.element":"minecraft:not_a_real_item"}'
+        Written = $false
+        ExpectResponse = 'Import failed: stale or unsupported patch'
+    },
+    @{
+        Name = 'jeieditor:tag (deleting a tag with no members is refused)'
+        Bundle = 'declared-probe-tag-delete-empty'
+        RecipeId = 'jeieditor:tag/item/jeieditor/smoke_empty'
+        Serializer = 'jeieditor:tag'
+        RecipePath = 'data\jeieditor\tags\item\smoke_empty.json'
+        Fields = '{"tag.op":"tag.delete","tag.registry":"item"}'
+        Written = $false
+        ExpectResponse = 'Import failed: stale or unsupported patch'
     }
 )
 
@@ -2437,6 +2575,16 @@ try {
         Assert-GeneratedRecipe -Case $case -GeneratedPath $written[$case.RecipeId] -Stage 'after reload'
     }
     foreach ($probe in $probeCases) {
+        # A probe whose file a later probe deliberately rewrites - the create / add /
+        # remove / delete steps over one tag, where each step's expectation is the state
+        # the step before it left behind - is only asserted right after its own import.
+        # Re-asserting it here would compare the sequence's final file against the
+        # intermediate list that step wrote. The last step of such a sequence does not
+        # set LaterStep, so the file still gets its after-reload proof.
+        if ($probe.ContainsKey('LaterStep') -and $probe.LaterStep) {
+            Write-Host ("  (skipped after-reload re-assertion for a chained step: {0})" -f $probe.Name)
+            continue
+        }
         if ($probeWritten.ContainsKey($probe.Name)) {
             Assert-GeneratedRecipe -Case $probe -GeneratedPath $probeWritten[$probe.Name] -Stage 'probe after reload'
         }

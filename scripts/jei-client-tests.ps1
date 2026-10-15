@@ -151,23 +151,13 @@ $rowsByUid = @{}
 foreach ($row in $rows) { $rowsByUid[$row.uid] = $row }
 
 # Pages that must produce no editor model at all. "gap" rows come from the
-# checklist; the three tag pages are locked here rather than read from the
-# document, because JEI serves them as bare
-# mezz.jei.library.plugins.jei.tags.TagInfoRecipe objects - neither a
-# RecipeHolder nor a Recipe - which no editor path accepts, so they are asserted
-# here as well as in the document, which marks them `gap` too. A page in both
-# lists is simply required to model nothing twice, which is harmless.
-#
-# This is the honest end state, not a missing feature: a tag page displays a
-# tag's member list (its input slot and its output slot show the same members),
-# which is tag data read from the `tags/` registries, not a recipe record - so
-# there is no recipe edit to make, and "editing" it would mean rewriting a tag,
-# i.e. changing every recipe that uses that tag.
-$knownUnsupported = @(
-    'minecraft:tag_recipes/item',
-    'minecraft:tag_recipes/block',
-    'minecraft:tag_recipes/fluid'
-)
+# checklist; this list is for pages the checklist does not name. It used to hold
+# the three JEI tag pages, which are now wired: the editor models a tag page as
+# one slot holding the tag's first member and edits the tag itself through the
+# tag patch kind (serializer "jeieditor:tag", ops member.add / member.remove /
+# tag.create / tag.delete), so those pages are read from the checklist as "done"
+# like every other wired page and asserted to model at least one recipe.
+$knownUnsupported = @()
 $zeroModelRows = New-Object System.Collections.Generic.List[object]
 foreach ($uid in $gaps) {
     $zeroModelRows.Add([pscustomobject] @{ uid = $uid; kind = 'gap' })

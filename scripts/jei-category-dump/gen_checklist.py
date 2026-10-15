@@ -111,14 +111,10 @@ NOT_COVERED_UIDS = {
     # synthesised (create:conversion_0, _1) and have no recipe JSON. Nothing on the page
     # resolves to a manager recipe, so the client builds no model.
     "create:mystery_conversion",
-    # JEI's own tag pages. They are not recipes at all - each page lists the members of
-    # every item/block/fluid tag - and scripts/jei-client-tests.ps1 already keeps them in a
-    # separate known-unsupported list whose gate requires zero models. Marking them `gap`
-    # here as well makes the checklist's `todo` column mean "work that is still to do",
-    # which these three never will be.
-    "minecraft:tag_recipes/item",
-    "minecraft:tag_recipes/block",
-    "minecraft:tag_recipes/fluid",
+    # JEI's own tag pages used to be listed here. They are wired now (see
+    # TAG_PAGE_UIDS): a tag page is modelled as one slot holding the tag's first
+    # member and edited through the tag patch kind, so it is a `done` row rather
+    # than a gap. Nothing of theirs is left in this set.
     # --- recipes that exist only in code, so there is no recipe JSON to patch ---
     # Just Enough Archaeology builds its archaeology and sniffing recipes in code from
     # loot tables: the jar ships no data JSON at all (assets and classes only), so the
@@ -187,6 +183,31 @@ NOT_COVERED_UIDS = {
 RESOLVED_VANILLA_UIDS = {
     "create:automatic_packing",
     "create:automatic_shapeless",
+}
+
+# JEI's own tag pages, which are `done` without a ModdedRecipeDeclaration for the same
+# reason the two pages above are: what they display is not a recipe record at all, so
+# there is no declaration to write. Each page lists the members of one item, block or
+# fluid tag (JEI registers one such category per registry and names the uid
+# `<registry namespace>:tag_recipes/<registry path>`), and the editor edits the tag
+# itself: JeiRecipeEditorPlugin.createTagModel() models the page as one slot holding the
+# tag's first member - a tag can hold 1052 members (minecraft:item) while EditorModel
+# accepts at most 128 slots, and every operation names one member - and every operation
+# travels as a tag patch (serializer `jeieditor:tag`, ops member.add / member.remove /
+# tag.create / tag.delete) that the server's TagEditApplier rewrites the tag from.
+# scripts/jei-client-tests.ps1 asserts the pages through the tag branch of its own
+# checks (one slot, a drop that becomes a member-add of the dropped ingredient - on the
+# block page the block id that item places - and the three menu operations), and the
+# write path by scripts/jei-declared-smoke.ps1's seven tag probes.
+#
+# This list is the reversal of an earlier decision: the three uids used to sit in
+# NOT_COVERED_UIDS and in the client test script's locked known-unsupported list, both
+# of which required them to produce zero models. That was true while no editor path
+# accepted a bare TagInfoRecipe; it is not any more.
+TAG_PAGE_UIDS = {
+    "minecraft:tag_recipes/item",
+    "minecraft:tag_recipes/block",
+    "minecraft:tag_recipes/fluid",
 }
 
 
@@ -313,7 +334,7 @@ def status_of(row):
     if row["uid"] in NOT_COVERED_UIDS or row["uid"] in READ_ONLY_UIDS:
         return "gap"
     if (row["uid"] in VANILLA_SUPPORTED or row["uid"] in VANILLA_BACKED
-            or row["uid"] in RESOLVED_VANILLA_UIDS):
+            or row["uid"] in RESOLVED_VANILLA_UIDS or row["uid"] in TAG_PAGE_UIDS):
         return "done"
     if (serializer(row) in DECLARED or row["uid"] in DECLARED_UIDS
             or row["uid"] in ALIASED_UIDS):
@@ -463,6 +484,26 @@ def main():
             out.write("| `%s` | %s | %s | 见 §门禁页面的建模覆盖 |\n"
                       % (uid, row["recipes"], row["title"][:24]))
 
+    if TAG_PAGE_UIDS:
+        out.write("\nJEI 自己的三个标签页（`minecraft:tag_recipes/{item,block,fluid}`）同样是 `done` "
+                  "但**没有**声明：它们显示的既不是 `RecipeHolder` 也不是 `Recipe`，而是 "
+                  "`TagInfoRecipe`（一个标签的成员列表），所以没有配方 JSON 可写。编辑器的做法是把页面"
+                  "建模成**一个** `input.0` 槽（放着该标签的第一个成员）并改写标签本身："
+                  "一个标签可以有 1052 个成员（`minecraft:item`），而 `EditorModel` 最多 128 个槽，"
+                  "且每次操作只命名一个成员，所以「一成员一槽」既建不出来也用不上。"
+                  "每次操作走标签补丁（serializer `jeieditor:tag`，`tag.op` 为 "
+                  "`member.add`/`member.remove`/`tag.create`/`tag.delete`），配方 id 里编码了"
+                  "**注册表**与标签 id（`jeieditor:tag/<item|block|fluid>/<tag namespace>/<tag path>`），"
+                  "因为标签 id 在不同注册表里会重名（`minecraft:planks` 同时是物品标签和方块标签），"
+                  "而世界 SavedData、导入包与服务端权限闸门都按这个 id 寻址。"
+                  "方块标签的成员是方块 id，而页面显示、拖放能带上的只有**物品**，所以落进方块标签的原料"
+                  "要换回它放置的方块（`BlockItem#getBlock`），放不出方块的物品（木棍）被拒：\n\n")
+        out.write("| 页面 uid | 配方数 | 编辑操作 | 客户端建模 |\n| --- | --- | --- | --- |\n")
+        for uid in sorted(TAG_PAGE_UIDS):
+            row = [r for r in rows if r["uid"] == uid][0]
+            out.write("| `%s` | %s | 加/删成员、由某个成员建标签、删标签 | 见 §门禁页面的建模覆盖 |\n"
+                      % (uid, row["recipes"]))
+
     out.write("\n## A2 组：含流体/化学品原料的配方页面（%d）\n\n" % len(fluidic))
     out.write("这些页面的槽位里含流体/化学品等非物品原料。`EditorIngredient` 现在携带"
               "**原料种类**（`IngredientKind`：item / fluid / chemical）、资源 id 和**数量**，"
@@ -516,7 +557,9 @@ def main():
     out.write("\n## B 组：JEI 合成页（%d）\n\n" % len(synthetic))
     out.write("页面对象由模组代码生成，不来自配方 JSON。可以编辑的只有少数"
               "（例如 `horsepowered:*`、`cobblemon:*` 是模组自己的数据驱动配方），"
-              "其余基本是展示型页面。\n")
+              "其余基本是展示型页面。JEI 自己的三个标签页"
+              "（`minecraft:tag_recipes/{item,block,fluid}`）也在这一组里，它们是 `done` 但没有声明："
+              "编辑的是标签本身，见 A1 组后半的标签页说明。\n")
     group_by_namespace(out, synthetic, False, True)
 
     out.write("\n## C 组：信息页（%d，不适用可视化编辑）\n\n" % len(info))
@@ -553,11 +596,10 @@ def main():
     out.write("| `immersiveengineering:arc_recycling` | 0 个模型 | 与 `arc_furnace` 共用 serializer，"
               "但它的配方在 reload 时由 `arc_recycling_list.json` 生成（没有自己的配方 JSON 可打补丁），"
               "声明把它列为只读页 → 清单不能算它已接入 |\n")
-    out.write("| `minecraft:tag_recipes/item`、`/block`、`/fluid` | 0 个模型 | JEI 直接推 "
-              "`TagInfoRecipe`，既不是 `RecipeHolder` 也不是 `Recipe`，编辑器所有路径都不认 → "
-              "不是已支持页面。这不是缺口：标签页显示的是标签的成员列表（入槽与出槽是同一批成员），"
-              "那是 `tags/` 注册表里的标签数据而不是配方记录，所以没有可写的配方编辑——「编辑」它等于改写标签，"
-              "会连带改变所有用到该标签的配方 |\n")
+    out.write("| `minecraft:tag_recipes/item`、`/block`、`/fluid` | 每页至少 1 个模型 | 早期是 0 个模型："
+              "JEI 直接推 `TagInfoRecipe`，既不是 `RecipeHolder` 也不是 `Recipe`，编辑器所有路径都不认。"
+              "现在这三页走**标签补丁**这一支：模型是一个 `input.0` 槽，操作是 `member.add`/"
+              "`member.remove`/`tag.create`/`tag.delete`（见 0/A1 组后面的标签页说明） |\n")
     out.write("| `jei:information`、`minecraft:compostable`、锻造纹饰配方 | 产出槽为空 | 不是缺陷："
               "编辑器的契约就是产出槽为空时不可编辑，客户端测试按同一契约断言 |\n\n")
     out.write("另外实测到 7 个**没有声明却能建模**的页面，其中 6 个已经按事实记入清单（见 A1 组的两张说明表）："
@@ -582,9 +624,11 @@ def main():
               "`ingredients`/`result`，写出的 JSON 读不回来。"
               "`create:automatic_packing` 不受影响：它的样本全部携带 `minecraft:crafting_shaped`/"
               "`crafting_shapeless`。\n\n")
-    out.write("门禁除了「已接入必须至少建出一个模型」，还反过来断言两个集合必须建出**零**个模型："
-              "标 `gap` 的行，以及脚本里锁定的已知不可用页面（三个 `minecraft:tag_recipes/*`）。"
-              "这样缺口是被断言的事实而不是被忽略的行：哪天有人修好了，门禁会红，提示回来改本清单。\n\n")
+    out.write("门禁除了「已接入必须至少建出一个模型」，还反过来断言 `gap` 行必须建出**零**个模型。"
+              "这样缺口是被断言的事实而不是被忽略的行：哪天有人修好了，门禁会红，提示回来改本清单。"
+              "客户端测试脚本里另有一份「已知不可用」的锁定名单（`$knownUnsupported`），目前为空："
+              "它原先锁着三个标签页，那三页接入标签补丁之后由清单按 `done` 读入、按已接入断言"
+              "（每页至少一个模型）。\n\n")
     out.write("### 实测查出的编译器缺陷\n\n")
     out.write("`KNOWN UNSUPPORTED` 这条新断言上线后第一次运行就红了，而且不是文档问题："
               "JEI 的标签页（`TagInfoRecipe`）不是 `RecipeHolder`，`JeiRecipeIntrospection.recipeId` 会回落到"
@@ -704,7 +748,8 @@ def main():
               "`cloche`/`bottling_machine`/`fertilizer`/`blast_furnace_fuel` 也已全部接入 | in_progress |\n"
               % (len(fluidic), a2_declared, a2_gap, len(fluidic) - a2_declared - a2_gap))
     out.write("| W3 | B 组 | 普查完成：%d 页里 %d 页已逐页判定（各自理由写在生成器的集合与注释里："
-              "已声明、或按事实记 `gap`；`todo` 已清空），候选调查见 "
+              "已声明、按标签补丁类型接入（三个 `minecraft:tag_recipes/*`）、或按事实记 `gap`；"
+              "`todo` 已清空），候选调查见 "
               "`build/tmp/jei-synthetic-survey.md`。剩下的都不是「再写一条声明」能解决的，见 W4 "
               "| in_progress |\n" % (len(synthetic), len(synthetic)))
     out.write("| W4 | 新机制 | 三个「需要新机制」的页面都已用**派生契约**接入："

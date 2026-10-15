@@ -8,6 +8,7 @@ import cc.sighs.JEIEditor.editor.EditorSlot;
 import cc.sighs.JEIEditor.editor.IngredientKind;
 import cc.sighs.JEIEditor.editor.RecipePatchSemantics;
 import cc.sighs.JEIEditor.editor.SlotPatchFields;
+import cc.sighs.JEIEditor.editor.TagPatchFields;
 import cc.sighs.JEIEditor.platform.fuel.FuelOverrideState;
 import cc.sighs.JEIEditor.platform.recipe.CookingRecipeEditorAdapter;
 import cc.sighs.JEIEditor.platform.recipe.CraftingSlotMapper;
@@ -15,6 +16,7 @@ import cc.sighs.JEIEditor.platform.recipe.FuelRecipeEditorAdapter;
 import cc.sighs.JEIEditor.platform.recipe.JeiVanillaRecipeEditorAdapter;
 import cc.sighs.JEIEditor.platform.recipe.RecipeCreationAdapter;
 import cc.sighs.JEIEditor.platform.recipe.RecipeEditorAdapters;
+import cc.sighs.JEIEditor.platform.recipe.TagEditorAdapter;
 import cc.sighs.JEIEditor.recipe.RecipeFieldMapping;
 import mezz.jei.api.gui.ingredient.IRecipeSlotDrawable;
 import mezz.jei.api.gui.ingredient.IRecipeSlotView;
@@ -43,6 +45,14 @@ import java.util.regex.Pattern;
 public final class ClientEditorState {
     private static final Pattern RECIPE_PATH = Pattern.compile("[a-z0-9._/-]+");
     private static final String RECIPE_NAMESPACE = "jeieditor";
+    /**
+     * The tag path a staged new tag carries until the page bar's id input names it. A
+     * valid tag path on purpose: every step in between - the page bar, the
+     * pending-patch lookup, the fingerprint - then works on a well-formed patch, and
+     * the save is refused while the input is still empty, so the placeholder is never
+     * submitted.
+     */
+    private static final String NEW_TAG_PLACEHOLDER = "new_tag";
     private static String lastDrop = "";
     // Keep the UI switch independent from the pending-edit session. JEI may reset
     // or recreate recipe state while the recipe screen remains open.
@@ -60,6 +70,13 @@ public final class ClientEditorState {
     /** Draft models keyed by the screen that owns their source JEI layout. */
     private static final Map<Screen, Map<String, EditorModel>> creationDrafts =
             new WeakHashMap<Screen, Map<String, EditorModel>>();
+    /**
+     * The staged new tag of each screen: the encoded recipe id its
+     * {@code tag.create} patch currently carries. A new tag has no source page and no
+     * draft model - the page it was seeded from shows the tag it came from - so only
+     * the patch's own id is remembered, which is what the page bar's id input renames.
+     */
+    private static final Map<Screen, String> tagCreateDrafts = new WeakHashMap<Screen, String>();
     private static EditorModel lastModel;
     private static String lastSlotKey;
     private static IRecipeSlotsView lastRecipeSlots;
@@ -131,6 +148,21 @@ public final class ClientEditorState {
 
     static void setPendingPatch(RecipePatch patch) {
         session.apply(patch);
+        refreshPreview();
+    }
+
+    /**
+     * Stages one tag operation, replacing whatever the same tag was staged for.
+     *
+     * <p>A tag patch carries the whole operation ({@code tag.op} plus its element), so
+     * two gestures on one tag are mutually exclusive - adding a member and then
+     * deleting the tag is one edit, not two. {@link RecipeEditSession#apply} would
+     * merge their fields instead, which for a delete means keeping the {@code
+     * tag.element} of the operation before it; the tag contract ignores an element on a
+     * delete, but the staged patch should be what the user's last gesture produced.
+     */
+    static void setTagPatch(RecipePatch patch) {
+        session.replace(patch);
         refreshPreview();
     }
 
@@ -262,9 +294,79 @@ public final class ClientEditorState {
         clearPreview();
     }
 
+    /**
+     * Stages a new tag whose only member is {@code elementId}, named by a placeholder
+     * id until the page bar's id input names it.
+     *
+     * <p>The name cannot be asked for before the patch exists - the patch is what the
+     * id input renames - and a placeholder that is a valid tag id keeps every step in
+     * between (the page bar, the pending-patch lookup, the save) working on a
+     * well-formed patch. Nothing is submitted until the user saves, and
+     * {@link #renameTagCreateDraft} refuses that save while the placeholder is still
+     * in place.
+     */
+    static void createTag(Screen screen, EditorModel model, String elementId) {
+        String registry = TagEditorAdapter.registryOf(model);
+        if (registry == null) {
+            throw new IllegalArgumentException("this page is not an editable tag");
+        }
+        RecipePatch patch = TagEditorAdapter.createTag(model,
+                elementId).orElseThrow(() -> new IllegalArgumentException(
+                        "this tag cannot hold " + elementId));
+        RecipePatch staged = new RecipePatch(
+                TagPatchFields.recipeId(registry, RECIPE_NAMESPACE + ":" + NEW_TAG_PLACEHOLDER),
+                patch.serializerId(), patch.baseFingerprint(), patch.fields());
+        session.replace(staged);
+        tagCreateDrafts.put(screen, staged.recipeId());
+        clearPreview();
+    }
+
+    /** Whether a new tag is staged and still waiting for the id input to name it. */
+    static boolean hasTagCreateDraft(Screen screen) {
+        return tagCreateDrafts.containsKey(screen);
+    }
+
+    /**
+     * Renames the staged new tag using the path typed in the page bar, or returns the
+     * message to show instead. The namespace is forced to {@link #RECIPE_NAMESPACE}
+     * exactly as a created recipe's is, because the id input draws that namespace and
+     * only the path is typed.
+     */
+    static String renameTagCreateDraft(Screen screen, String enteredPath) {
+        String oldId = tagCreateDrafts.get(screen);
+        if (oldId == null) {
+            return "Create a new tag first";
+        }
+        String path = enteredPath == null ? "" : enteredPath.trim();
+        if (path.isEmpty()) {
+            return "Enter a tag ID first";
+        }
+        if (path.indexOf(':') >= 0 || !RECIPE_PATH.matcher(path).matches()) {
+            return "Use only the tag path; namespace is jeieditor";
+        }
+        RecipePatch current = getPendingPatch(oldId);
+        Optional<TagPatchFields.Target> target = current == null
+                ? Optional.<TagPatchFields.Target>empty() : TagPatchFields.target(current);
+        if (!target.isPresent()) {
+            tagCreateDrafts.remove(screen);
+            return "Create a new tag first";
+        }
+        String newId = TagPatchFields.recipeId(target.get().registry(),
+                RECIPE_NAMESPACE + ":" + path.toLowerCase(Locale.ROOT));
+        if (getPendingPatch(newId) != null && !newId.equals(oldId)) {
+            return "That tag ID is already being edited";
+        }
+        session.remove(java.util.Collections.singleton(oldId));
+        session.replace(new RecipePatch(newId, current.serializerId(), current.baseFingerprint(),
+                current.fields()));
+        tagCreateDrafts.put(screen, newId);
+        return "";
+    }
+
     static void clearPendingPatch() {
         session.reset();
         creationDrafts.clear();
+        tagCreateDrafts.clear();
         newRecipePageIds.clear();
         clearPreview();
         lastModel = null;
@@ -290,6 +392,12 @@ public final class ClientEditorState {
         Set<String> created = newRecipePageIds.remove(screen);
         if (created != null) {
             ids.addAll(created);
+        }
+        // A staged new tag has no page to be found on, so its id is only reachable
+        // through the draft: resetting the current page has to drop it by name.
+        String tagDraft = tagCreateDrafts.remove(screen);
+        if (tagDraft != null) {
+            ids.add(tagDraft);
         }
         creationDrafts.remove(screen);
         clearPendingPatches(ids);

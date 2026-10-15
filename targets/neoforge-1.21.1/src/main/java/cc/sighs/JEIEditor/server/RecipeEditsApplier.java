@@ -7,6 +7,7 @@ import cc.sighs.JEIEditor.editor.IngredientKind;
 import cc.sighs.JEIEditor.editor.RecipePatch;
 import cc.sighs.JEIEditor.editor.RecipePatchSemantics;
 import cc.sighs.JEIEditor.editor.SlotPatchFields;
+import cc.sighs.JEIEditor.editor.TagPatchFields;
 import cc.sighs.JEIEditor.platform.fuel.FuelOverrideState;
 import cc.sighs.JEIEditor.platform.recipe.CookingRecipeEditorAdapter;
 import cc.sighs.JEIEditor.platform.recipe.CraftingSlotMapper;
@@ -76,6 +77,15 @@ public final class RecipeEditsApplier {
     }
 
     public static boolean canApply(MinecraftServer server, RecipePatch patch) {
+        // A tag patch edits a JEI tag page instead of a recipe: JEI shows the
+        // loader's item, block and fluid tags as pages, and what the edit changes
+        // is a tag's member list in a generated tag file. A tag is not a
+        // RecipeManager entry and has no serializer, so every recipe-shaped check
+        // below - the holder lookup, the serializer support test, the model
+        // rebuild - would refuse it without ever looking at what it asks for.
+        if (TagPatchFields.isTagPatch(patch)) {
+            return TagEditApplier.canApply(server, patch);
+        }
         if (FuelRecipeEditorAdapter.isFuelPatch(patch)) {
             return canApplyFuel(server, patch);
         }
@@ -119,6 +129,9 @@ public final class RecipeEditsApplier {
     }
 
     public static CompletableFuture<Void> apply(MinecraftServer server, RecipePatch patch) {
+        if (TagPatchFields.isTagPatch(patch)) {
+            return TagEditApplier.apply(server, patch);
+        }
         if (FuelRecipeEditorAdapter.isFuelPatch(patch)) {
             return applyFuel(server, patch);
         }
@@ -170,6 +183,9 @@ public final class RecipeEditsApplier {
 
     /** Saves a patch to the generated datapack without changing live recipes. */
     public static CompletableFuture<Void> save(MinecraftServer server, RecipePatch patch) {
+        if (TagPatchFields.isTagPatch(patch)) {
+            return TagEditApplier.save(server, patch);
+        }
         if (FuelRecipeEditorAdapter.isFuelPatch(patch)) {
             return saveFuel(server, patch);
         }
@@ -212,6 +228,9 @@ public final class RecipeEditsApplier {
 
     /** Applies one already-saved patch to the live recipe manager only. */
     public static CompletableFuture<Void> reloadSaved(MinecraftServer server, RecipePatch patch) {
+        if (TagPatchFields.isTagPatch(patch)) {
+            return TagEditApplier.reloadSaved(server, patch);
+        }
         if (FuelRecipeEditorAdapter.isFuelPatch(patch)) {
             Optional<ResourceLocation> itemId = FuelRecipeEditorAdapter.itemId(patch);
             int burnTime = FuelRecipeEditorAdapter.burnTime(patch);
@@ -267,6 +286,10 @@ public final class RecipeEditsApplier {
     }
 
     public static CompletableFuture<Void> reset(MinecraftServer server, String recipeIdText, EditorModel baseModel) {
+        RecipePatch savedTag = RecipeEditsSavedData.get(server).patches().get(recipeIdText);
+        if (TagPatchFields.isTagPatch(savedTag)) {
+            return TagEditApplier.reset(server, savedTag);
+        }
         if (FuelRecipeEditorAdapter.itemIdFromRecipeId(recipeIdText).isPresent()) {
             return resetFuel(server, recipeIdText, baseModel);
         }
@@ -752,7 +775,7 @@ public final class RecipeEditsApplier {
         }
     }
 
-    private static Path packRoot(MinecraftServer server) {
+    static Path packRoot(MinecraftServer server) {
         return server.getWorldPath(net.minecraft.world.level.storage.LevelResource.DATAPACK_DIR)
                 .resolve("jeieditor-generated");
     }
@@ -762,7 +785,7 @@ public final class RecipeEditsApplier {
                 .resolve("recipe").resolve(recipeId.getPath() + ".json");
     }
 
-    private static void ensurePackMetadata(MinecraftServer server) throws IOException {
+    static void ensurePackMetadata(MinecraftServer server) throws IOException {
         Path root = packRoot(server);
         Files.createDirectories(root.resolve("data"));
         Path metadata = root.resolve("pack.mcmeta");
@@ -773,7 +796,7 @@ public final class RecipeEditsApplier {
     }
 
     /** Refreshes only pack discovery/selection; it does not reload resources. */
-    private static void ensureGeneratedPackSelected(MinecraftServer server) throws IOException {
+    static void ensureGeneratedPackSelected(MinecraftServer server) throws IOException {
         PackRepository repository = server.getPackRepository();
         repository.reload();
         Optional<String> packId = repository.getAvailableIds().stream()
@@ -890,7 +913,7 @@ public final class RecipeEditsApplier {
         }
     }
 
-    private static void writeAtomically(Path path, byte[] bytes) throws IOException {
+    static void writeAtomically(Path path, byte[] bytes) throws IOException {
         Path temporary = path.resolveSibling(path.getFileName().toString() + ".tmp-" + UUID.randomUUID());
         try {
             Files.write(temporary, bytes);
@@ -901,7 +924,7 @@ public final class RecipeEditsApplier {
         }
     }
 
-    private static void pruneEmptyParents(Path directory) throws IOException {
+    static void pruneEmptyParents(Path directory) throws IOException {
         Path root = directory;
         while (root != null && Files.isDirectory(root) && !root.getFileName().toString().equals("jeieditor-generated")) {
             try (Stream<Path> entries = Files.list(root)) {
@@ -2212,7 +2235,7 @@ public final class RecipeEditsApplier {
         return json;
     }
 
-    private static <T> CompletableFuture<T> failedFuture(Throwable throwable) {
+    static <T> CompletableFuture<T> failedFuture(Throwable throwable) {
         CompletableFuture<T> future = new CompletableFuture<T>();
         future.completeExceptionally(throwable);
         return future;

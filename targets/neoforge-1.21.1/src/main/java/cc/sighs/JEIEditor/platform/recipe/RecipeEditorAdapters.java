@@ -2,6 +2,7 @@ package cc.sighs.JEIEditor.platform.recipe;
 
 import cc.sighs.JEIEditor.editor.EditorIngredient;
 import cc.sighs.JEIEditor.editor.EditorModel;
+import cc.sighs.JEIEditor.editor.IngredientKind;
 import cc.sighs.JEIEditor.editor.RecipePatch;
 import cc.sighs.JEIEditor.recipe.RecipeFieldMapping;
 import net.minecraft.core.HolderLookup;
@@ -103,6 +104,9 @@ public final class RecipeEditorAdapters {
         if (model == null || ingredient == null) {
             throw new IllegalArgumentException("recipe slot and ingredient are required");
         }
+        if (TagEditorAdapter.supportsSerializer(model.serializerId())) {
+            return tagMemberAdd(model, ingredient.kind(), ingredient.id());
+        }
         if (ModdedRecipeAdapters.supports(model.serializerId())) {
             return ModdedRecipeAdapters.replaceSlot(model, slotKey, ingredient);
         }
@@ -111,6 +115,21 @@ public final class RecipeEditorAdapters {
                     "this page has only item slots; a " + ingredient.kind().id() + " cannot be placed here");
         }
         return replaceSlot(model, slotKey, itemStack(ingredient), null);
+    }
+
+    /**
+     * The member a drop on a tag page adds.
+     *
+     * <p>Nothing about the patch depends on the slot key: a tag page has one slot,
+     * and the operation rewrites the tag as a whole, so the patch carries the tag's
+     * own fields ({@code tag.op} / {@code tag.registry} / {@code tag.element}) rather
+     * than the slot's. The refusal is what keeps the editor from offering an edit the
+     * server would answer with "stale or unsupported" - most often a dropped item that
+     * places no block on a block tag page (see {@code TagEditorAdapter.elementId}).
+     */
+    private static RecipePatch tagMemberAdd(EditorModel model, IngredientKind kind, String ingredientId) {
+        return TagEditorAdapter.addMember(model, kind, ingredientId).orElseThrow(() ->
+                new IllegalArgumentException("this tag cannot hold " + ingredientId));
     }
 
     /** An {@code ItemStack} for an item ingredient, refusing an unknown item. */
@@ -123,6 +142,16 @@ public final class RecipeEditorAdapters {
     }
     public static RecipePatch replaceSlot(EditorModel model, String slotKey, ItemStack stack,
                                           HolderLookup.Provider registries) {
+        if (TagEditorAdapter.supportsSerializer(model.serializerId())) {
+            // A tag page's drag comes through this overload for an item stack and
+            // through the ingredient overload for a fluid, so both have to reach
+            // the same member-add.
+            Optional<EditorIngredient> dropped = RecipeAdapterSupport.simpleStack(stack);
+            if (!dropped.isPresent()) {
+                throw new IllegalArgumentException("this stack cannot be a tag member");
+            }
+            return tagMemberAdd(model, dropped.get().kind(), dropped.get().id());
+        }
         if (ModdedRecipeAdapters.supports(model.serializerId())) {
             if (RecipeFieldMapping.outputIndex(slotKey) >= 0) {
                 return ModdedRecipeAdapters.replaceOutput(model, slotKey, stack);
@@ -147,6 +176,13 @@ public final class RecipeEditorAdapters {
         return replaceInput(model, slotKey, stack);
     }
     public static RecipePatch clearSlot(EditorModel model, String slotKey) {
+        if (TagEditorAdapter.supportsSerializer(model.serializerId())) {
+            // "Clear" would have to mean emptying the tag, which is tag.delete and
+            // names the whole tag rather than one slot; offering it as a slot edit
+            // would send a patch whose op the server reads as a member change.
+            throw new IllegalArgumentException(
+                    "a tag's member list cannot be cleared slot by slot; remove a member instead");
+        }
         if (ModdedRecipeAdapters.supports(model.serializerId())) {
             return ModdedRecipeAdapters.clearSlot(model, slotKey);
         }
@@ -167,6 +203,11 @@ public final class RecipeEditorAdapters {
      * adapters only ever expose a single {@code output} slot.
      */
     public static RecipePatch setOutputCount(EditorModel model, String slotKey, int count) {
+        if (TagEditorAdapter.supportsSerializer(model.serializerId())) {
+            // A tag page's OUTPUT slots are the members, one each, and they are not
+            // the model's slots at all: there is no output count to set.
+            throw new IllegalArgumentException("a tag page has no output count");
+        }
         if (ModdedRecipeAdapters.supports(model.serializerId())) {
             return ModdedRecipeAdapters.setOutputCount(model, slotKey, count);
         }
